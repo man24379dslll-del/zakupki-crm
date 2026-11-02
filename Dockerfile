@@ -21,7 +21,7 @@ COPY --from=build /app/public ./public
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/src ./src
-COPY --from=build /app/tsconfig.json /app/next.config.ts ./
+COPY --from=build /app/tsconfig.json /app/next.config.mjs ./
 EXPOSE 3000
 # миграции + начальные данные, затем сервер
 CMD ["npm", "run", "start:prod"]
