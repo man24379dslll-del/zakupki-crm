@@ -20,7 +20,8 @@ export async function seed() {
   const [ex] = await db.select().from(schema.users).where(eq(schema.users.login, login));
   if (!ex) {
     await db.insert(schema.users).values({ login, name: "Руководитель", passwordHash: await bcrypt.hash(password, 10), roleId: admin.id, mustChangePassword: !process.env.ADMIN_PASSWORD });
-    console.log(`Создан пользователь ${login} / ${password}`);
+    // пароль из ADMIN_PASSWORD в лог не пишем: логи Railway хранятся
+    console.log(`Создан пользователь ${login}${process.env.ADMIN_PASSWORD ? "" : ` / ${password} (смените при первом входе)`}`);
   } else console.log(`Пользователь ${login} уже есть`);
   await db.insert(schema.settings).values([
     { key: "priceWindowMode", value: "rolling" },
