@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CalendarDays } from "lucide-react";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { requireUser } from "@/lib/auth";
@@ -68,6 +69,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <form action="/search" className="min-w-0 flex-1">
           <input name="q" placeholder="Поиск: № заказа, счёт, поставщик, товар" className="w-full max-w-md rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm focus:border-brand-500 focus:bg-white focus:outline-none" />
         </form>
+        <Link href="/calendar" className={btnClass("secondary", "sm")} title="Календарь поставок">
+          <CalendarDays size={16} strokeWidth={1.8} className="text-brand-600" />
+          <span className="hidden sm:inline">Календарь поставок</span>
+        </Link>
         {canEdit && (
           <div className="hidden gap-1.5 md:flex">
             <Link href="/orders/new" className={btnClass("primary", "sm")}>

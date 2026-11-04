@@ -1,6 +1,7 @@
-/** Запускается при каждом старте контейнера: применяет миграции и создаёт роли/руководителя, если их нет */
+/** Запускается при каждом старте контейнера: применяет миграции, создаёт роли/руководителя, если их нет, и объявляет новые версии */
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { db, pool } from "../src/db";
+import { announceUpdates } from "../src/lib/updates";
 import { seed } from "./seed";
 
 (async () => {
@@ -13,6 +14,8 @@ import { seed } from "./seed";
   const t = Date.now();
   await migrate(db, { migrationsFolder: "./drizzle" });
   await seed();
+  const announced = await announceUpdates();
+  if (announced) console.log(`Разослано уведомлений об обновлении: версий ${announced}`);
   console.log(`База готова (${Date.now() - t} мс)`);
   await pool.end();
 })().catch((e) => {
