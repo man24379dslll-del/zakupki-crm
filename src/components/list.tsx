@@ -55,9 +55,9 @@ export function SearchInput({ sp, placeholder = "Поиск…" }: { sp: SP; pla
   );
 }
 
-export function FSelect({ name, sp, options, placeholder }: { name: string; sp: SP; options: { value: string; label: string }[]; placeholder: string }) {
+export function FSelect({ name, sp, options, placeholder, className }: { name: string; sp: SP; options: { value: string; label: string }[]; placeholder: string; className?: string }) {
   return (
-    <select name={name} defaultValue={qp(sp, name)} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm">
+    <select name={name} defaultValue={qp(sp, name)} className={cn("rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm", className)}>
       <option value="">{placeholder}</option>
       {options.map((o) => (
         <option key={o.value} value={o.value}>

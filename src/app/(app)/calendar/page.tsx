@@ -50,13 +50,16 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const gridEnd = addDays(last, 6 - weekday(last));
 
   const sup = qp(sp, "supplier");
+  const product = qp(sp, "product");
   const buyer = all ? qp(sp, "buyer") : "";
   const ow: SQL[] = [sql`o.deleted_at IS NULL`, orderScope(u), ACTIVE];
   if (sup) ow.push(sql`o.supplier_id = ${sup}`);
+  if (product) ow.push(sql`ist.product_id = ${product}`);
   if (buyer) ow.push(sql`o.buyer_id = ${buyer}`);
   // план поставок не привязан к закупщику: видимость — через ответственных за поставщика
   const pw: SQL[] = [sql`pe.week_start BETWEEN ${gridStart}::date AND ${gridEnd}::date`, sql`pe.qty > 0`];
   if (sup) pw.push(sql`pe.supplier_id = ${sup}`);
+  if (product) pw.push(sql`pe.product_id = ${product}`);
   const planUser = buyer || (all ? "" : u.id);
   if (planUser) pw.push(sql`EXISTS (SELECT 1 FROM supplier_buyers sb WHERE sb.supplier_id = pe.supplier_id AND sb.user_id = ${planUser})`);
 
@@ -116,6 +119,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
       />
       <FilterBar base="/calendar" sp={sp} keep={["m"]}>
         <FSelect name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
+        <FSelect name="product" sp={sp} placeholder="Все товары" options={opt(opts.products)} className="w-full sm:w-72" />
         {all && <FSelect name="buyer" sp={sp} placeholder="Все закупщики" options={opt(opts.buyers)} />}
       </FilterBar>
 
