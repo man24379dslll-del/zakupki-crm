@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { requirePerm } from "@/lib/auth";
+import { requirePagePerm } from "@/lib/auth";
 import { PERMS } from "@/lib/permissions";
 import { ORDER_STATS, OVERDUE_SQL } from "@/lib/services/orders";
 import { pricePoints } from "@/lib/services/prices";
@@ -16,7 +16,7 @@ export const metadata = { title: "Аналитика" };
 
 export default async function Analytics({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
-  await requirePerm(PERMS.statsViewAll);
+  await requirePagePerm(PERMS.statsViewAll);
   const d = today();
   const from = qp(sp, "from") || addMonths(d, -12);
   const to = qp(sp, "to") || d;

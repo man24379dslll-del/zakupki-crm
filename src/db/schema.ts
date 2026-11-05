@@ -33,6 +33,8 @@ export const supplierStatus = pgEnum("supplier_status", ["NEGOTIATION", "ACTIVE"
 export const orderStatus = pgEnum("order_status", ["DRAFT", "SENT", "CONFIRMED", "AWAITING", "PARTIAL", "DELIVERED", "CANCELLED"]);
 export const paymentType = pgEnum("payment_type", ["ADVANCE", "PARTIAL", "FULL"]);
 export const paymentMethod = pgEnum("payment_method", ["BANK", "CASH"]);
+/// как платим по заказу: безнал, наличные или комплексно (часть нал, часть безнал)
+export const orderPayMethod = pgEnum("order_pay_method", ["BANK", "CASH", "MIXED"]);
 export const taskPriority = pgEnum("task_priority", ["LOW", "NORMAL", "HIGH", "URGENT"]);
 export const taskStatus = pgEnum("task_status", ["NEW", "IN_PROGRESS", "WAITING", "DONE", "CANCELLED"]);
 
@@ -55,6 +57,8 @@ export const users = pgTable("users", {
   roleId: uuid("role_id").notNull().references(() => roles.id),
   /// дополнительные права, выданные руководителем (orders.viewAll, stats.viewAll …)
   extraPermissions: text("extra_permissions").array().notNull().default(sql`'{}'::text[]`),
+  /// права роли, которые у этого сотрудника сняты (можно ограничить и руководителя)
+  revokedPermissions: text("revoked_permissions").array().notNull().default(sql`'{}'::text[]`),
   isActive: boolean("is_active").notNull().default(true),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
   createdAt: created(),
@@ -196,6 +200,10 @@ export const purchaseOrders = pgTable(
     invoiceNumber: text("invoice_number"),
     invoiceDate: date("invoice_date"),
     plannedDeliveryDate: date("planned_delivery_date"),
+    /// способ оплаты; null — не указан
+    paymentMethod: orderPayMethod("payment_method"),
+    /// для комплексной оплаты: сколько из суммы заказа платим наличными (остальное безнал)
+    cashPlanned: money("cash_planned"),
     status: orderStatus("status").notNull().default("DRAFT"),
     comment: text("comment"),
     source: text("source"),

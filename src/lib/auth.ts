@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { and, eq, gt, lt } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { can, type Perm, type SessionUser } from "./permissions";
+import { can, effectivePerms, type Perm, type SessionUser } from "./permissions";
 
 const COOKIE = "crm_session";
 const SESSION_DAYS = 14;
@@ -60,7 +60,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     name: row.u.name,
     login: row.u.login,
     role: row.r.code,
-    perms: new Set([...row.r.permissions, ...row.u.extraPermissions]),
+    perms: effectivePerms(row.r.permissions, row.u.extraPermissions, row.u.revokedPermissions),
   };
 });
 
@@ -81,6 +81,13 @@ export class AccessError extends Error {
 export async function requirePerm(p: Perm): Promise<SessionUser> {
   const u = await requireUser();
   if (!can(u, p)) throw new AccessError();
+  return u;
+}
+
+/** Для страниц: нет права — понятная страница «Нет доступа» вместо ошибки */
+export async function requirePagePerm(p: Perm): Promise<SessionUser> {
+  const u = await requireUser();
+  if (!can(u, p)) redirect(`/no-access?perm=${encodeURIComponent(p)}`);
   return u;
 }
 

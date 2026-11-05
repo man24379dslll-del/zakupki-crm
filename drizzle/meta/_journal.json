@@ -36,6 +36,13 @@
       "when": 1793879183762,
       "tag": "0004_item_due_date",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793887828320,
+      "tag": "0005_order_payment_and_revoked_perms",
+      "breakpoints": true
     }
   ]
 }

@@ -245,3 +245,28 @@ export function useQueryNav() {
     router.push(`${pathname}?${q.toString()}`);
   };
 }
+
+/** Способ оплаты заказа; для комплексной — сколько платим наличными (остальное безнал) */
+export function OrderPayFields({ method, cash, className }: { method?: string | null; cash?: string | null; className?: string }) {
+  const [m, setM] = useState(method ?? "");
+  return (
+    <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2", className)}>
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-slate-600">Способ оплаты</span>
+        <select name="paymentMethod" value={m} onChange={(e) => setM(e.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-8 text-sm text-slate-800 focus:border-brand-500 focus:outline-none">
+          <option value="">— не указан</option>
+          <option value="BANK">Безнал</option>
+          <option value="CASH">Наличные</option>
+          <option value="MIXED">Комплексная (нал + безнал)</option>
+        </select>
+      </label>
+      {m === "MIXED" && (
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600">Из них наличными, ₽</span>
+          <input name="cashPlanned" inputMode="decimal" defaultValue={cash ?? ""} placeholder="остальное — безнал" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-brand-500 focus:outline-none" />
+          <span className="mt-1 block text-xs text-slate-500">Можно не заполнять, если доли ещё неизвестны</span>
+        </label>
+      )}
+    </div>
+  );
+}

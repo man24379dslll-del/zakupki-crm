@@ -1,4 +1,4 @@
-import { requirePerm } from "@/lib/auth";
+import { requirePagePerm } from "@/lib/auth";
 import { PERMS } from "@/lib/permissions";
 import { loadImport } from "@/lib/import/load";
 import { buildPreview } from "@/lib/import/importer";
@@ -46,7 +46,7 @@ const LEVEL: Record<string, { tone: string; label: string }> = { error: { tone: 
 
 export default async function ImportPreview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await requirePerm(PERMS.importRun);
+  await requirePagePerm(PERMS.importRun);
   let loaded;
   try {
     loaded = await loadImport(id);

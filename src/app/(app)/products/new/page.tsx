@@ -1,4 +1,4 @@
-import { requirePerm } from "@/lib/auth";
+import { requirePagePerm } from "@/lib/auth";
 import { PERMS } from "@/lib/permissions";
 import { ActionForm, SubmitButton } from "@/components/client";
 import { Card, Field, Input, PageHeader, Textarea } from "@/components/ui";
@@ -7,7 +7,7 @@ import { createProductAction } from "../actions";
 export const metadata = { title: "Новый товар" };
 
 export default async function NewProduct() {
-  await requirePerm(PERMS.productsEdit);
+  await requirePagePerm(PERMS.productsEdit);
   return (
     <>
       <PageHeader title="Новый товар" back={{ href: "/products", label: "Товары" }} subtitle="Если похожий товар уже есть, система предложит его вместо создания дубля" />

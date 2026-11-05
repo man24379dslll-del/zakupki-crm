@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { requirePerm } from "@/lib/auth";
+import { requirePagePerm } from "@/lib/auth";
 import { PERMS } from "@/lib/permissions";
 import { isSimilar } from "@/lib/normalize";
 import { ActionForm, SubmitButton } from "@/components/client";
@@ -12,7 +12,7 @@ export const metadata = { title: "Дубли товаров" };
 
 /** Группы похожих названий. Руководитель выбирает основной товар и отмечает дубли. */
 export default async function Duplicates() {
-  await requirePerm(PERMS.productsMerge);
+  await requirePagePerm(PERMS.productsMerge);
   const ps = await db.select({ id: schema.products.id, name: schema.products.name }).from(schema.products).where(isNull(schema.products.mergedIntoId)).orderBy(schema.products.name);
   const uses = await db.execute(sql`SELECT product_id, COUNT(*)::int n FROM purchase_order_items GROUP BY 1`);
   const n = new Map((uses.rows as { product_id: string; n: number }[]).map((r) => [r.product_id, r.n]));

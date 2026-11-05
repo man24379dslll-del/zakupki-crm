@@ -6,9 +6,9 @@ import { requireUser, AccessError } from "@/lib/auth";
 import { can, PERMS } from "@/lib/permissions";
 import { assertOrderAccess, ITEM_STATS } from "@/lib/services/orders";
 import { opt, selectOptions } from "@/lib/services/refs";
-import { fmtDate, fmtDateTime, fmtMoney, fmtPct, fmtPrice, fmtQty, num, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, today } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtMoney, fmtPct, fmtPrice, fmtQty, num, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo, ORDER_PAY_LABEL, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, today } from "@/lib/format";
 import { Alert, Badge, Card, Field, Input, PageHeader, Progress, Select, Stat, Table, Td, Textarea, Th, cn } from "@/components/ui";
-import { ActionForm, ConfirmButton, SubmitButton } from "@/components/client";
+import { ActionForm, ConfirmButton, OrderPayFields, SubmitButton } from "@/components/client";
 import { Combobox } from "@/components/combobox";
 import { CommentsBlock, DocumentsBlock, HistoryBlock } from "@/components/blocks";
 import {
@@ -85,6 +85,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const deliveredAmount = items.reduce((s, i) => s + Number(i.delivered_amount), 0);
   const remaining = items.reduce((s, i) => s + (i.is_closed ? 0 : Math.max(Number(i.qty) - Number(i.delivered), 0)), 0);
   const paid = pays.reduce((s, p) => s + Number(p.p.amount), 0);
+  const paidCash = pays.filter((p) => p.p.method === "CASH").reduce((s, p) => s + Number(p.p.amount), 0);
+  // комплексная оплата: сколько осталось наличными и безналом (если доля наличных задана)
+  const cashPlan = o.paymentMethod === "MIXED" ? num(o.cashPlanned) : null;
+  const payPlan = cashPlan === null ? null : { cashLeft: cashPlan - paidCash, bankLeft: amount - cashPlan - (paid - paidCash) };
   const debtOrder = amount - paid;
   const debtShip = deliveredAmount - paid;
   const pct = qty > 0 ? (delivered / qty) * 100 : 0;
@@ -149,7 +153,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         <Stat label="Сумма заказа" value={fmtMoney(amount)} sub={nullPrice ? "есть позиции без цены" : `${items.length} поз.`} />
         <Stat label="Поставлено" value={fmtPct(pct)} sub={`${fmtQty(delivered)} из ${fmtQty(qty)} · остаток ${fmtQty(remaining)}`} />
         <Stat label="Сумма поставленного" value={fmtMoney(deliveredAmount)} />
-        <Stat label="Оплачено" value={fmtMoney(paid)} sub={amount > 0 ? `${fmtPct((paid / amount) * 100)} от заказа` : undefined} />
+        <Stat label="Оплачено" value={fmtMoney(paid)} sub={[amount > 0 ? `${fmtPct((paid / amount) * 100)} от заказа` : null, paidCash > 0 ? `нал ${fmtMoney(paidCash)} · безнал ${fmtMoney(paid - paidCash)}` : null].filter(Boolean).join(" · ") || undefined} />
         <Stat label="Долг по заказу" value={fmtMoney(debtOrder)} sub={debtOrder < 0 ? "переплата" : "сумма заказа − оплаты"} />
         <Stat label="Долг по отгрузке" value={fmtMoney(debtShip)} sub={debtShip < 0 ? "аванс у поставщика" : "поставлено − оплаты"} tone={debtShip > 0 ? "amber" : undefined} />
       </div>
@@ -184,6 +188,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             <Field label="Общий срок поставки" hint="Свой срок у товара — в «Позициях заказа» → «Редактировать»">
               <Input type="date" name="plannedDeliveryDate" defaultValue={o.plannedDeliveryDate ?? ""} />
             </Field>
+            <OrderPayFields method={o.paymentMethod} cash={o.cashPlanned === null ? null : String(Number(o.cashPlanned))} className="sm:col-span-2" />
             <Field label="Комментарий" className="sm:col-span-2 lg:col-span-3">
               <Input name="comment" defaultValue={o.comment ?? ""} />
             </Field>
@@ -448,7 +453,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                     <Select name="type" defaultValue={paid === 0 ? "ADVANCE" : "PARTIAL"} options={Object.entries(PAYMENT_TYPE_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
                   </Field>
                   <Field label="Способ">
-                    <Select name="method" options={Object.entries(PAYMENT_METHOD_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
+                    <Select name="method" defaultValue={o.paymentMethod === "CASH" ? "CASH" : "BANK"} options={Object.entries(PAYMENT_METHOD_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
                   </Field>
                   <Field label="№ платёжного поручения">
                     <Input name="docNumber" />
@@ -474,6 +479,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                 ["Направление", dir?.name],
                 ["Дата счёта", o.invoiceDate ? fmtDate(o.invoiceDate) : null],
                 ["Общий срок поставки", o.plannedDeliveryDate ? fmtDate(o.plannedDeliveryDate) : null],
+                ["Способ оплаты", o.paymentMethod ? (o.paymentMethod === "MIXED" && cashPlan !== null ? `Комплексная: нал ${fmtMoney(cashPlan)}, безнал ${fmtMoney(amount - cashPlan)}` : ORDER_PAY_LABEL[o.paymentMethod]) : null],
+                ...(payPlan ? ([["Осталось оплатить", `нал ${fmtMoney(Math.max(payPlan.cashLeft, 0))} · безнал ${fmtMoney(Math.max(payPlan.bankLeft, 0))}`]] as [string, string][]) : []),
                 ["Создан", fmtDateTime(o.createdAt)],
                 ["Комментарий", o.comment],
               ].map(([k, v]) => (

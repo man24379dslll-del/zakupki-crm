@@ -1,10 +1,10 @@
 "use server";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { clientIp, hashPassword, requirePerm } from "@/lib/auth";
-import { GRANTABLE, PERMS, PERM_LABELS, type Perm } from "@/lib/permissions";
+import { effectivePerms, GRANTABLE, permDelta, PERMS, PERM_LABELS, type Perm } from "@/lib/permissions";
 import { logActivity } from "@/lib/audit";
 import { fstr, safe, UserError } from "@/lib/forms";
 import { ROLE_LABEL } from "@/lib/format";
@@ -45,12 +45,24 @@ export async function updateUserAction(_: ActionResult, fd: FormData): Promise<A
     const roleCode = (fstr(fd.get("role")) ?? t.r.code) as "ADMIN" | "BUYER" | "VIEWER";
     if (id === u.id && roleCode !== "ADMIN") throw new UserError("Нельзя снять с себя роль руководителя");
     const [role] = await db.select().from(schema.roles).where(eq(schema.roles.code, roleCode));
-    const extra = fd.getAll("perm").map(String).filter((p) => GRANTABLE.includes(p as Perm));
-    const next = { name: fstr(fd.get("name")) ?? t.u.name, email: fstr(fd.get("email")), phone: fstr(fd.get("phone")), position: fstr(fd.get("position")), roleId: role.id, extraPermissions: extra };
+    // смена роли — права по умолчанию новой роли (галочки относились к старой); иначе — как отмечено
+    const roleChanged = role.id !== t.u.roleId;
+    const { extra, revoked } = roleChanged ? { extra: [], revoked: [] } : permDelta(role.permissions, fd.getAll("perm").map(String));
+    const after = effectivePerms(role.permissions, extra, revoked);
+    if (id === u.id && !after.has(PERMS.usersManage)) throw new UserError("Нельзя снять с себя право «Управлять пользователями» — иначе вы потеряете доступ к этой странице");
+    if (!after.has(PERMS.usersManage)) {
+      // в системе должен остаться хотя бы один активный сотрудник, который управляет пользователями
+      const others = await db.select({ u: schema.users, r: schema.roles }).from(schema.users).innerJoin(schema.roles, eq(schema.roles.id, schema.users.roleId)).where(and(eq(schema.users.isActive, true), ne(schema.users.id, id)));
+      if (!others.some((x) => effectivePerms(x.r.permissions, x.u.extraPermissions, x.u.revokedPermissions).has(PERMS.usersManage))) throw new UserError("Это последний сотрудник, который может управлять пользователями — право снять нельзя");
+    }
+    const next = { name: fstr(fd.get("name")) ?? t.u.name, email: fstr(fd.get("email")), phone: fstr(fd.get("phone")), position: fstr(fd.get("position")), roleId: role.id, extraPermissions: extra, revokedPermissions: revoked };
     const changes: Record<string, [unknown, unknown]> = {};
-    if (role.id !== t.u.roleId) changes["Роль"] = [ROLE_LABEL[t.r.code], ROLE_LABEL[roleCode]];
-    const a = [...t.u.extraPermissions].sort().join(","), b = [...extra].sort().join(",");
-    if (a !== b) changes["Доп. права"] = [t.u.extraPermissions.map((p) => PERM_LABELS[p as Perm]).join("; ") || "—", extra.map((p) => PERM_LABELS[p as Perm]).join("; ") || "—"];
+    if (roleChanged) changes["Роль"] = [ROLE_LABEL[t.r.code], ROLE_LABEL[roleCode]];
+    const before = effectivePerms(t.r.permissions, t.u.extraPermissions, t.u.revokedPermissions);
+    const added = [...after].filter((p) => !before.has(p)).map((p) => PERM_LABELS[p as Perm]);
+    const removed = [...before].filter((p) => !after.has(p)).map((p) => PERM_LABELS[p as Perm]);
+    if (added.length) changes["Права выданы"] = [null, added.join("; ")];
+    if (removed.length) changes["Права сняты"] = [removed.join("; "), null];
     for (const k of ["name", "email", "phone", "position"] as const) if ((t.u[k] ?? null) !== (next[k] ?? null)) changes[k] = [t.u[k], next[k]];
     await db.update(schema.users).set(next).where(eq(schema.users.id, id));
     await logActivity(db, { userId: u.id, action: "update", entityType: "user", entityId: id, summary: `Изменён пользователь ${next.name}`, changes });

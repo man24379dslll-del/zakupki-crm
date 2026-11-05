@@ -1,8 +1,8 @@
-import { requirePerm } from "@/lib/auth";
+import { requirePagePerm } from "@/lib/auth";
 import { can, PERMS } from "@/lib/permissions";
 import { opt, selectOptions } from "@/lib/services/refs";
 import { addDays, today } from "@/lib/format";
-import { ActionForm, OrderItemsEditor, SubmitButton } from "@/components/client";
+import { ActionForm, OrderItemsEditor, OrderPayFields, SubmitButton } from "@/components/client";
 import { Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { qp, type SP } from "@/components/list";
 import { createOrderAction } from "../actions";
@@ -13,7 +13,7 @@ export const metadata = { title: "Новый заказ" };
 
 export default async function NewOrderPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
-  const u = await requirePerm(PERMS.ordersEdit);
+  const u = await requirePagePerm(PERMS.ordersEdit);
   const o = await selectOptions();
   const [lead] = await db.select().from(schema.settings).where(eq(schema.settings.key, "defaultLeadDays"));
   const d = today();
@@ -44,6 +44,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
             <Field label="Дата счёта">
               <Input type="date" name="invoiceDate" />
             </Field>
+            <OrderPayFields className="sm:col-span-2" />
             <Field label="Плановая дата поставки" hint="Общая для всех товаров. Если у товара другой срок — укажите его в строке товара">
               <Input type="date" name="plannedDeliveryDate" defaultValue={addDays(d, Number(lead?.value ?? 30))} />
             </Field>

@@ -6,7 +6,7 @@ import { listOrders, orderScope } from "@/lib/services/orders";
 import { orderFilters, orderSort } from "@/lib/services/order-filters";
 import { supplierList } from "@/lib/services/suppliers";
 import { allProductsAvg } from "@/lib/services/prices";
-import { ORDER_STATUS_LABEL, PAYMENT_TYPE_LABEL, SUPPLIER_STATUS_LABEL, today, orderNo } from "@/lib/format";
+import { ORDER_PAY_LABEL, ORDER_STATUS_LABEL, PAYMENT_TYPE_LABEL, SUPPLIER_STATUS_LABEL, today, orderNo } from "@/lib/format";
 import { buildXlsx, xlsxResponse } from "@/lib/xlsx";
 import type { SP } from "@/components/list";
 
@@ -25,12 +25,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ entity: 
       name: "Заказы",
       columns: [
         { header: "№", key: "no" }, { header: "Дата", key: "order_date", fmt: "date" }, { header: "Поставщик", key: "supplier_name", width: 36 }, { header: "Счёт", key: "invoice_number" },
-        { header: "Юрлицо", key: "legal_entity_name", width: 30 }, { header: "Направление", key: "direction_name" }, { header: "Закупщик", key: "buyer_name", width: 20 }, { header: "Товары", key: "products", width: 50 },
+        { header: "Юрлицо", key: "legal_entity_name", width: 30 }, { header: "Направление", key: "direction_name" }, { header: "Способ оплаты", key: "payment_method_label", width: 22 }, { header: "Наличными (план)", key: "cash_planned", fmt: "money" }, { header: "Закупщик", key: "buyer_name", width: 20 }, { header: "Товары", key: "products", width: 50 },
         { header: "Кол-во", key: "qty", fmt: "qty" }, { header: "Сумма", key: "amount", fmt: "money" }, { header: "Поставлено, шт", key: "delivered", fmt: "qty" }, { header: "Сумма отгрузок", key: "delivered_amount", fmt: "money" },
         { header: "Остаток, шт", key: "remaining", fmt: "qty" }, { header: "Оплачено", key: "paid", fmt: "money" }, { header: "Долг по заказу", key: "debt_order", fmt: "money" }, { header: "Долг по отгрузке", key: "debt_ship", fmt: "money" },
         { header: "План. поставка", key: "planned_delivery_date", fmt: "date" }, { header: "Статус", key: "status_label", width: 22 }, { header: "Просрочен", key: "overdue_label" },
       ],
-      rows: rows.map((r) => ({ ...r, no: orderNo(r.number), debt_order: Number(r.amount) - Number(r.paid), debt_ship: Number(r.delivered_amount) - Number(r.paid), status_label: ORDER_STATUS_LABEL[r.status], overdue_label: r.overdue ? "да" : "" })),
+      rows: rows.map((r) => ({ ...r, no: orderNo(r.number), debt_order: Number(r.amount) - Number(r.paid), debt_ship: Number(r.delivered_amount) - Number(r.paid), status_label: ORDER_STATUS_LABEL[r.status], payment_method_label: r.payment_method ? ORDER_PAY_LABEL[r.payment_method] : "", cash_planned: r.cash_planned === null ? null : Number(r.cash_planned), overdue_label: r.overdue ? "да" : "" })),
     }]);
     return xlsxResponse(buf, `Заказы ${d}.xlsx`);
   }

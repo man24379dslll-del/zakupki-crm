@@ -13,7 +13,7 @@ export async function GET() {
   const u = await getCurrentUser();
   if (!u || !can(u, PERMS.settingsEdit)) return new Response("Нет доступа", { status: 403 });
   const sheets = [];
-  const users = await db.execute(sql`SELECT u.id, u.login, u.name, u.email, u.phone, u.position, r.code AS role, u.extra_permissions, u.is_active, u.created_at FROM users u JOIN roles r ON r.id = u.role_id`);
+  const users = await db.execute(sql`SELECT u.id, u.login, u.name, u.email, u.phone, u.position, r.code AS role, u.extra_permissions, u.revoked_permissions, u.is_active, u.created_at FROM users u JOIN roles r ON r.id = u.role_id`);
   sheets.push({ name: "users", columns: Object.keys(users.rows[0] ?? {}).map((k) => ({ header: k, key: k })), rows: users.rows as Record<string, unknown>[] });
   for (const t of TABLES) {
     const res = await db.execute(sql.raw(`SELECT * FROM ${t}`));

@@ -7,7 +7,7 @@ import { can, PERMS } from "@/lib/permissions";
 import { listOrders } from "@/lib/services/orders";
 import { opt, selectOptions } from "@/lib/services/refs";
 import { orderFilters, orderSort } from "@/lib/services/order-filters";
-import { fmtDate, fmtMoney, fmtQty, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo } from "@/lib/format";
+import { fmtDate, fmtMoney, fmtQty, ORDER_PAY_LABEL, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo } from "@/lib/format";
 import { Badge, Card, Empty, LinkButton, PageHeader, Progress, Table, Td, Th } from "@/components/ui";
 import { ExportLink, FDate, FilterBar, FSelect, pageParams, Pagination, SavedViews, SearchInput, SortTh, type SP } from "@/components/list";
 import { SaveViewButton } from "@/components/client";
@@ -52,6 +52,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         {all && <FSelect searchable name="buyer" sp={sp} placeholder="Все закупщики" options={[{ value: "none", label: "Не назначен" }, ...opt(opts.buyers)]} />}
         <FSelect searchable name="legal" sp={sp} placeholder="Все юрлица" options={opt(opts.legal)} />
         <FSelect searchable name="direction" sp={sp} placeholder="Все направления" options={opt(opts.directions)} />
+        <FSelect name="pay" sp={sp} placeholder="Любой способ оплаты" options={[...Object.entries(ORDER_PAY_LABEL).map(([v, l]) => ({ value: v, label: l })), { value: "none", label: "Способ не указан" }]} />
         <FDate name="from" sp={sp} label="с" />
         <FDate name="to" sp={sp} label="по" />
       </FilterBar>

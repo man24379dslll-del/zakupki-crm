@@ -10,10 +10,27 @@ import { fdate, fnum, fstr, safe, UserError } from "@/lib/forms";
 import { ensureProduct, findProductExact, linkProductSupplier, similarProducts } from "@/lib/services/refs";
 import { isSimilar, normKey } from "@/lib/normalize";
 import { assertOrderAccess, checkOverDelivery, itemProgress, recalcOrderStatus } from "@/lib/services/orders";
-import { ORDER_STATUS_LABEL, orderNo, today } from "@/lib/format";
+import { ORDER_PAY_LABEL, ORDER_STATUS_LABEL, orderNo, today } from "@/lib/format";
 import type { ActionResult } from "@/components/client";
 
 type Status = (typeof schema.orderStatus.enumValues)[number];
+
+/** Способ оплаты заказа; для комплексной — плановая сумма наличными (не больше суммы заказа) */
+function readPay(fd: FormData, orderAmount: number) {
+  const m = fstr(fd.get("paymentMethod"));
+  const paymentMethod = m === "BANK" || m === "CASH" || m === "MIXED" ? (m as "BANK" | "CASH" | "MIXED") : null;
+  const cash = paymentMethod === "MIXED" ? fnum(fd.get("cashPlanned")) : null;
+  if (cash !== null && (Number.isNaN(cash) || cash < 0)) throw new UserError("Неверная сумма наличными");
+  if (cash !== null && orderAmount > 0 && cash > orderAmount) throw new UserError(`Наличными ${cash.toLocaleString("ru-RU")} ₽ — больше суммы заказа ${orderAmount.toLocaleString("ru-RU")} ₽`);
+  return { paymentMethod, cashPlanned: cash === null ? null : String(cash) };
+}
+
+/** В журнал — понятные названия способа оплаты, а не BANK/CASH/MIXED */
+function payLabels(changes: Record<string, [unknown, unknown]>) {
+  const c = changes["Способ оплаты"];
+  if (c) changes["Способ оплаты"] = [ORDER_PAY_LABEL[String(c[0])] ?? null, ORDER_PAY_LABEL[String(c[1])] ?? null];
+  return changes;
+}
 
 function readItems(fd: FormData) {
   const names = fd.getAll("item_product").map((v) => String(v).trim());
@@ -57,6 +74,7 @@ export async function createOrderAction(_: ActionResult, fd: FormData): Promise<
     const orderDate = fdate(fd.get("orderDate")) ?? today();
     const items = readItems(fd);
     if (!items.length) throw new UserError("Добавьте хотя бы один товар");
+    const pay = readPay(fd, items.reduce((a, it) => a + it.qty * (it.price ?? 0), 0));
     // назначить другого закупщика может только тот, кто видит все заказы
     const buyerId = can(u, PERMS.ordersViewAll) ? fstr(fd.get("buyerId")) ?? u.id : u.id;
 
@@ -91,6 +109,7 @@ export async function createOrderAction(_: ActionResult, fd: FormData): Promise<
           invoiceNumber: fstr(fd.get("invoiceNumber")),
           invoiceDate: fdate(fd.get("invoiceDate")),
           plannedDeliveryDate: fdate(fd.get("plannedDeliveryDate")),
+          ...pay,
           status: (fstr(fd.get("status")) as Status) ?? "DRAFT",
           comment: fstr(fd.get("comment")),
           source: "manual",
@@ -118,7 +137,9 @@ export async function updateOrderHeaderAction(_: ActionResult, fd: FormData): Pr
     const u = await requireUser();
     const id = String(fd.get("id"));
     const o = await assertOrderAccess(u, id, true);
+    const [amt] = await db.select({ a: sql<string>`COALESCE(SUM(${schema.purchaseOrderItems.qty} * COALESCE(${schema.purchaseOrderItems.price}, 0)), 0)` }).from(schema.purchaseOrderItems).where(eq(schema.purchaseOrderItems.orderId, id));
     const next = {
+      ...readPay(fd, Number(amt.a)),
       orderDate: fdate(fd.get("orderDate")) ?? o.orderDate,
       supplierId: fstr(fd.get("supplierId")) ?? o.supplierId,
       buyerId: can(u, PERMS.ordersViewAll) ? fstr(fd.get("buyerId")) : o.buyerId,
@@ -138,8 +159,11 @@ export async function updateOrderHeaderAction(_: ActionResult, fd: FormData): Pr
       invoiceNumber: "№ счёта",
       invoiceDate: "Дата счёта",
       plannedDeliveryDate: "Плановая дата поставки",
+      paymentMethod: "Способ оплаты",
+      cashPlanned: "Наличными (план)",
       comment: "Комментарий",
     });
+    payLabels(changes);
     if (!Object.keys(changes).length) return { ok: "Изменений нет" };
     await db.transaction(async (tx) => {
       await tx.update(schema.purchaseOrders).set({ ...next, updatedAt: new Date() }).where(eq(schema.purchaseOrders.id, id));

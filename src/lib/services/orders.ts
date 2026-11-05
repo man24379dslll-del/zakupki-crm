@@ -54,6 +54,8 @@ export interface OrderRow {
   status: string;
   invoice_number: string | null;
   planned_delivery_date: string | null;
+  payment_method: string | null;
+  cash_planned: string | null;
   supplier_id: string;
   supplier_name: string;
   buyer_id: string | null;
@@ -95,7 +97,7 @@ export async function listOrders(u: SessionUser, p: OrderListParams = {}): Promi
   const conds = [sql`o.deleted_at IS NULL`, orderScope(u), ...(p.where ?? [])];
   const res = await db.execute(sql`
     WITH ${ORDER_STATS}
-    SELECT o.id, o.number, o.order_date, o.status, o.invoice_number, o.planned_delivery_date,
+    SELECT o.id, o.number, o.order_date, o.status, o.invoice_number, o.planned_delivery_date, o.payment_method, o.cash_planned,
       o.supplier_id, s.name AS supplier_name, o.buyer_id, u.name AS buyer_name,
       COALESCE(le.short_name, le.name) AS legal_entity_name, dir.name AS direction_name,
       COALESCE(os.amount,0) AS amount, COALESCE(os.qty,0) AS qty, COALESCE(os.delivered,0) AS delivered,

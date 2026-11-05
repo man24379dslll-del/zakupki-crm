@@ -83,6 +83,8 @@ export const PRIORITY_LABEL: Record<string, string> = { LOW: "Низкий", NOR
 export const PRIORITY_TONE: Record<string, string> = { LOW: "gray", NORMAL: "blue", HIGH: "amber", URGENT: "red" };
 export const PAYMENT_TYPE_LABEL: Record<string, string> = { ADVANCE: "Аванс", PARTIAL: "Частичная", FULL: "Полная" };
 export const PAYMENT_METHOD_LABEL: Record<string, string> = { BANK: "Безнал", CASH: "Наличные" };
+/** Способ оплаты заказа (комплексная — часть наличными, часть безналом) */
+export const ORDER_PAY_LABEL: Record<string, string> = { BANK: "Безнал", CASH: "Наличные", MIXED: "Комплексная (нал + безнал)" };
 export const SUPPLIER_STATUS_LABEL: Record<string, string> = { NEGOTIATION: "Переговоры", ACTIVE: "Работаем", PAUSED: "Приостановлено", STOPPED: "Прекращено" };
 export const SUPPLIER_STATUS_TONE: Record<string, string> = { NEGOTIATION: "blue", ACTIVE: "green", PAUSED: "amber", STOPPED: "gray" };
 export const ROLE_LABEL: Record<string, string> = { ADMIN: "Руководитель", BUYER: "Закупщик", VIEWER: "Наблюдатель" };

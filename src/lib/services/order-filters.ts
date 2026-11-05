@@ -27,6 +27,9 @@ export function orderFilters(sp: SP): SQL[] {
   if (legal) w.push(sql`o.legal_entity_id = ${legal}`);
   const dir = qp(sp, "direction");
   if (dir) w.push(sql`(o.direction_id = ${dir} OR EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.order_id = o.id AND poi.direction_id = ${dir}))`);
+  const pay = qp(sp, "pay");
+  if (pay === "none") w.push(sql`o.payment_method IS NULL`);
+  else if (pay === "BANK" || pay === "CASH" || pay === "MIXED") w.push(sql`o.payment_method = ${pay}`);
   const product = qp(sp, "product");
   if (product) w.push(sql`EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.order_id = o.id AND poi.product_id = ${product})`);
   const from = qp(sp, "from");

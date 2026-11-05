@@ -1,4 +1,4 @@
-import { requirePerm } from "@/lib/auth";
+import { requirePagePerm } from "@/lib/auth";
 import { PERMS } from "@/lib/permissions";
 import { ActionForm, SubmitButton } from "@/components/client";
 import { Card, PageHeader } from "@/components/ui";
@@ -8,7 +8,7 @@ import { ContractFields, SupplierFields } from "../form";
 export const metadata = { title: "Новый поставщик" };
 
 export default async function NewSupplier() {
-  await requirePerm(PERMS.suppliersEdit);
+  await requirePagePerm(PERMS.suppliersEdit);
   return (
     <>
       <PageHeader title="Новый поставщик" back={{ href: "/suppliers", label: "Поставщики" }} />
