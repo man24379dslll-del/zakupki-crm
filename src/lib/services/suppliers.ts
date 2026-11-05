@@ -3,6 +3,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { can, PERMS, type SessionUser } from "@/lib/permissions";
 import { orderScope, ORDER_STATS } from "./orders";
+import { CURRENT_CONTRACT } from "./contracts";
 
 export interface SupplierStatsRow {
   id: string;
@@ -19,6 +20,10 @@ export interface SupplierStatsRow {
   paid_orders: string;
   advances: string;
   last_order: string | null;
+  /// актуальный договор: есть ли и до какого числа (null — бессрочный)
+  contract_id: string | null;
+  contract_number: string | null;
+  contract_until: string | null;
   total?: number;
 }
 
@@ -48,8 +53,10 @@ export async function supplierList(u: SessionUser, where: SQL[] = [], order: SQL
       COALESCE(o.orders,0)::int AS orders, COALESCE(o.active_orders,0)::int AS active_orders,
       COALESCE(o.amount,0) AS amount, COALESCE(o.delivered_amount,0) AS delivered_amount,
       COALESCE(o.paid_orders,0) AS paid_orders, COALESCE(adv.advances,0) AS advances, o.last_order,
+      ct.id AS contract_id, ct.number AS contract_number, ct.valid_until::text AS contract_until,
       COUNT(*) OVER()::int AS total
     FROM suppliers s LEFT JOIN o ON o.supplier_id = s.id LEFT JOIN adv ON adv.supplier_id = s.id
+    LEFT JOIN LATERAL (${CURRENT_CONTRACT()}) ct ON TRUE
     WHERE s.deleted_at IS NULL ${where.length ? sql`AND ${sql.join(where, sql` AND `)}` : sql``}
     ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`);
   return res.rows as unknown as SupplierStatsRow[];

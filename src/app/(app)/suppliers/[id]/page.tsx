@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { can, PERMS } from "@/lib/permissions";
@@ -9,12 +9,14 @@ import { supplierList } from "@/lib/services/suppliers";
 import { getWindowMode, pricePoints, priceWindow, weightedStats } from "@/lib/services/prices";
 import { lastAndPrev } from "@/lib/calc";
 import { opt, selectOptions } from "@/lib/services/refs";
-import { fmtDate, fmtMoney, fmtPct, fmtPrice, fmtQty, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, SUPPLIER_STATUS_LABEL, SUPPLIER_STATUS_TONE } from "@/lib/format";
-import { Alert, Badge, Card, DL, Empty, LinkButton, PageHeader, Stat, Table, Tabs, Td, Th } from "@/components/ui";
+import { fmtDate, fmtMoney, fmtPct, fmtPrice, fmtQty, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, SUPPLIER_STATUS_LABEL, SUPPLIER_STATUS_TONE, today } from "@/lib/format";
+import { Alert, Badge, Card, cn, DL, Empty, LinkButton, PageHeader, Stat, Table, Tabs, Td, Th } from "@/components/ui";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/client";
 import { CommentsBlock, DocumentsBlock, HistoryBlock } from "@/components/blocks";
-import { deleteSupplierAction, setSupplierBuyersAction, updateSupplierAction } from "../actions";
-import { SupplierFields } from "../form";
+import { deleteContractAction, deleteSupplierAction, saveContractAction, setSupplierBuyersAction, updateSupplierAction } from "../actions";
+import { deleteDocumentAction } from "@/app/actions/documents";
+import { CONTRACT_TONE, contractState, contractTitle, type ContractState } from "@/lib/services/contracts";
+import { ContractFields, SupplierFields } from "../form";
 import { registerPaymentAction } from "../../orders/actions";
 import { PaymentFormFields } from "../../payments/fields";
 
@@ -34,6 +36,14 @@ export default async function SupplierPage({ params, searchParams }: { params: P
   const debtOrder = Number(stats.amount) - Number(stats.paid_orders) - Number(stats.advances);
   const base = `/suppliers/${id}`;
   const canEdit = can(u, PERMS.suppliersEdit);
+  const d = today();
+  const contracts = await db
+    .execute(sql`SELECT c.id, c.number, c.date::text AS date, c.valid_until::text AS valid_until, c.note
+      FROM supplier_contracts c WHERE c.supplier_id = ${id} AND c.deleted_at IS NULL
+      ORDER BY c.valid_until DESC NULLS FIRST, c.date DESC NULLS LAST, c.created_at DESC`)
+    .then((r) => r.rows as ContractRow[]);
+  const current = contracts[0] ?? null;
+  const cState = contractState(current, d);
 
   return (
     <>
@@ -42,6 +52,9 @@ export default async function SupplierPage({ params, searchParams }: { params: P
         title={
           <span className="flex flex-wrap items-center gap-2">
             {s.name} <Badge tone={SUPPLIER_STATUS_TONE[s.status]}>{SUPPLIER_STATUS_LABEL[s.status]}</Badge>
+            <Link href={`${base}?tab=info#contracts`} title={contractTitle(current, d)}>
+              <Badge tone={CONTRACT_TONE[cState]}>{contractBadge(current, cState)}</Badge>
+            </Link>
           </span>
         }
         subtitle={[s.legalName, s.inn && `ИНН ${s.inn}`, buyers.length ? `Ответственные: ${buyers.map((b) => b.name).join(", ")}` : "Ответственный не назначен"].filter(Boolean).join(" · ")}
@@ -104,6 +117,7 @@ export default async function SupplierPage({ params, searchParams }: { params: P
             )}
           </Card>
           <div className="space-y-4">
+            <ContractsCard supplierId={id} contracts={contracts} canEdit={canEdit} today={d} />
             <BuyersCard id={id} buyers={buyers} canManage={can(u, PERMS.ordersViewAll)} />
             {can(u, PERMS.deleteRecords) && (
               <Card title="Опасная зона">
@@ -128,6 +142,81 @@ export default async function SupplierPage({ params, searchParams }: { params: P
 }
 
 type U = Awaited<ReturnType<typeof requireUser>>;
+type ContractRow = { id: string; number: string | null; date: string | null; valid_until: string | null; note: string | null };
+
+function contractBadge(c: ContractRow | null, st: ContractState) {
+  if (st === "none") return "нет договора";
+  if (st === "expired") return "договор истёк";
+  if (st === "expiring") return `договор истекает ${fmtDate(c!.valid_until)}`;
+  return c!.valid_until ? `договор до ${fmtDate(c!.valid_until)}` : "договор бессрочный";
+}
+
+/** Договоры: актуальный сверху, история ниже; у каждого — файлы, изменение, удаление */
+async function ContractsCard({ supplierId, contracts, canEdit, today: d }: { supplierId: string; contracts: ContractRow[]; canEdit: boolean; today: string }) {
+  const files = contracts.length
+    ? await db
+        .select()
+        .from(schema.documents)
+        .where(and(eq(schema.documents.entityType, "contract"), inArray(schema.documents.entityId, contracts.map((c) => c.id)), isNull(schema.documents.deletedAt)))
+        .orderBy(asc(schema.documents.createdAt))
+    : [];
+  const fields = (c?: ContractRow) => <ContractFields compact c={c ? { number: c.number, date: c.date, validUntil: c.valid_until, note: c.note } : undefined} />;
+  return (
+    <Card title={<span id="contracts" className="scroll-mt-20">Договоры ({contracts.length})</span>}>
+      {contracts.length === 0 && <p className="mb-3 text-sm text-slate-500">Договор не прикреплён</p>}
+      <ul className="space-y-3">
+        {contracts.map((c, i) => {
+          const st = contractState(c, d);
+          const own = files.filter((f) => f.entityId === c.id);
+          return (
+            <li key={c.id} className={cn("rounded-lg border p-3", i === 0 ? "border-slate-200" : "border-dashed border-slate-200 bg-slate-50/60")}>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-medium text-slate-800">{contractTitle(c, d)}</span>
+                {i === 0 ? <Badge tone={CONTRACT_TONE[st]}>{{ none: "", ok: "действует", expiring: "истекает", expired: "истёк" }[st]}</Badge> : <Badge>прежний</Badge>}
+              </div>
+              {c.note && <div className="mt-1 text-xs text-slate-600">{c.note}</div>}
+              <ul className="mt-2 space-y-1">
+                {own.length === 0 && <li className="text-xs text-slate-400">Файлов нет</li>}
+                {own.map((f) => (
+                  <li key={f.id} className="flex items-center justify-between gap-2 text-sm">
+                    <a href={`/api/documents/${f.id}`} target="_blank" className="truncate text-brand-700 hover:underline">📄 {f.fileName}</a>
+                    {canEdit && <ConfirmButton action={deleteDocumentAction} question="Удалить файл?" hidden={{ id: f.id }}>✕</ConfirmButton>}
+                  </li>
+                ))}
+              </ul>
+              {canEdit && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs font-medium text-brand-700">Изменить или добавить файлы</summary>
+                  <ActionForm action={saveContractAction} className="mt-2">
+                    <input type="hidden" name="supplierId" value={supplierId} />
+                    <input type="hidden" name="contractId" value={c.id} />
+                    {fields(c)}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <SubmitButton size="sm">Сохранить</SubmitButton>
+                      <ConfirmButton action={deleteContractAction} question="Удалить договор вместе с файлами?" hidden={{ id: c.id }}>Удалить договор</ConfirmButton>
+                    </div>
+                  </ActionForm>
+                </details>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {canEdit && (
+        <details className="mt-3" open={contracts.length === 0}>
+          <summary className="cursor-pointer text-sm font-medium text-brand-700">+ {contracts.length ? "Новый договор или допсоглашение" : "Прикрепить договор"}</summary>
+          <ActionForm action={saveContractAction} resetOnOk className="mt-2">
+            <input type="hidden" name="supplierId" value={supplierId} />
+            {fields()}
+            <div className="mt-3">
+              <SubmitButton size="sm">Сохранить договор</SubmitButton>
+            </div>
+          </ActionForm>
+        </details>
+      )}
+    </Card>
+  );
+}
 
 async function BuyersCard({ id, buyers, canManage }: { id: string; buyers: { id: string; name: string; isPrimary: boolean }[]; canManage: boolean }) {
   const opts = canManage ? await selectOptions() : null;

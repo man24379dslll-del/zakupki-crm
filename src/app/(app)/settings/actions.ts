@@ -2,11 +2,12 @@
 import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requirePerm } from "@/lib/auth";
 import { PERMS } from "@/lib/permissions";
-import { logActivity } from "@/lib/audit";
+import { diff, logActivity } from "@/lib/audit";
+import { normKey } from "@/lib/normalize";
 import { fnum, fstr, safe, UserError } from "@/lib/forms";
 import { putFile } from "@/lib/storage";
 import { parseWorkbook, type ColumnMapping, type SheetKind } from "@/lib/import/parser";
@@ -143,5 +144,102 @@ export async function restoreRecordAction(_: ActionResult, fd: FormData): Promis
     await logActivity(db, { userId: u.id, action: "restore", entityType: type, entityId: id, summary: "Запись восстановлена из удалённых" });
     revalidatePath("/settings");
     return { ok: "Восстановлено" };
+  });
+}
+
+// ---------- справочники: наши юрлица и направления ----------
+
+type RefKind = "legal" | "direction";
+const REF_LABEL: Record<RefKind, string> = { legal: "Юрлицо", direction: "Направление" };
+const refTable = (k: string) => {
+  if (k === "legal") return schema.legalEntities;
+  if (k === "direction") return schema.directions;
+  throw new UserError("Неверный справочник");
+};
+
+export async function saveRefAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return safe(async () => {
+    const u = await requirePerm(PERMS.settingsEdit);
+    const kind = String(fd.get("kind")) as RefKind;
+    const t = refTable(kind);
+    const id = fstr(fd.get("id"));
+    const name = fstr(fd.get("name"));
+    if (!name) throw new UserError(kind === "legal" ? "Укажите полное название юрлица" : "Укажите название направления");
+    const key = normKey(name);
+    const [dup] = await db.select({ id: t.id, name: t.name }).from(t).where(id ? and(eq(t.key, key), ne(t.id, id)) : eq(t.key, key));
+    if (dup) throw new UserError(`«${dup.name}» уже есть в справочнике`);
+    const v: Record<string, string | null> = { name, key };
+    if (kind === "legal") {
+      v.shortName = fstr(fd.get("shortName"));
+      v.inn = fstr(fd.get("inn"));
+      if (v.inn && !/^\d{10}(\d{2})?$/.test(v.inn)) throw new UserError("ИНН — 10 или 12 цифр");
+    }
+    if (id) {
+      const [before] = await db.select().from(t).where(eq(t.id, id));
+      if (!before) throw new UserError("Запись не найдена");
+      await db.update(t).set(v as never).where(eq(t.id, id));
+      const changes = diff(before as unknown as Record<string, unknown>, v, { name: "Название", shortName: "Короткое название", inn: "ИНН" });
+      delete changes.key;
+      if (Object.keys(changes).length) await logActivity(db, { userId: u.id, action: "update", entityType: kind, entityId: id, summary: `${REF_LABEL[kind]} «${name}» изменено`, changes });
+    } else {
+      const [c] = await db.insert(t).values(v as never).returning({ id: t.id });
+      await logActivity(db, { userId: u.id, action: "create", entityType: kind, entityId: c.id, summary: `${REF_LABEL[kind]} «${name}» добавлено` });
+    }
+    revalidatePath("/settings");
+    return { ok: "Сохранено" };
+  });
+}
+
+/** Скрыть/показать: скрытое не предлагается в новых заказах, старые заказы не меняются */
+export async function toggleRefAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return safe(async () => {
+    const u = await requirePerm(PERMS.settingsEdit);
+    const kind = String(fd.get("kind")) as RefKind;
+    const t = refTable(kind);
+    const [r] = await db.select().from(t).where(eq(t.id, String(fd.get("id"))));
+    if (!r) throw new UserError("Запись не найдена");
+    await db.update(t).set({ isActive: !r.isActive } as never).where(eq(t.id, r.id));
+    await logActivity(db, { userId: u.id, action: "update", entityType: kind, entityId: r.id, summary: `${REF_LABEL[kind]} «${r.name}» ${r.isActive ? "скрыто" : "снова показывается"}`, changes: { "Показывать в списках": [r.isActive, !r.isActive] } });
+    revalidatePath("/settings");
+    return { ok: r.isActive ? "Скрыто" : "Показывается" };
+  });
+}
+
+/** Объединить дубль с основной записью: все заказы, позиции, оплаты и план переходят на неё, дубль удаляется */
+export async function mergeRefAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return safe(async () => {
+    const u = await requirePerm(PERMS.settingsEdit);
+    const kind = String(fd.get("kind")) as RefKind;
+    const t = refTable(kind);
+    const from = String(fd.get("id"));
+    const to = fstr(fd.get("target"));
+    if (!to) throw new UserError("Выберите, с чем объединить");
+    if (to === from) throw new UserError("Нельзя объединить запись саму с собой");
+    const [a] = await db.select().from(t).where(eq(t.id, from));
+    const [b] = await db.select().from(t).where(eq(t.id, to));
+    if (!a || !b) throw new UserError("Запись не найдена");
+    if (!fd.get("confirm")) return { needConfirm: `Все заказы и оплаты «${a.name}» перейдут на «${b.name}», а «${a.name}» будет удалено из справочника. Объединить?` };
+    await db.transaction(async (tx) => {
+      const moved: Record<string, number> = {};
+      if (kind === "legal") {
+        moved["Заказов"] = (await tx.update(schema.purchaseOrders).set({ legalEntityId: to }).where(eq(schema.purchaseOrders.legalEntityId, from)).returning({ id: schema.purchaseOrders.id })).length;
+        moved["Оплат"] = (await tx.update(schema.payments).set({ legalEntityId: to }).where(eq(schema.payments.legalEntityId, from)).returning({ id: schema.payments.id })).length;
+        moved["Строк плана"] = (await tx.update(schema.supplyPlanEntries).set({ legalEntityId: to }).where(eq(schema.supplyPlanEntries.legalEntityId, from)).returning({ id: schema.supplyPlanEntries.id })).length;
+      } else {
+        moved["Заказов"] = (await tx.update(schema.purchaseOrders).set({ directionId: to }).where(eq(schema.purchaseOrders.directionId, from)).returning({ id: schema.purchaseOrders.id })).length;
+        moved["Позиций"] = (await tx.update(schema.purchaseOrderItems).set({ directionId: to }).where(eq(schema.purchaseOrderItems.directionId, from)).returning({ id: schema.purchaseOrderItems.id })).length;
+      }
+      await tx.delete(t).where(eq(t.id, from));
+      await logActivity(tx, {
+        userId: u.id,
+        action: "merge",
+        entityType: kind,
+        entityId: to,
+        summary: `${REF_LABEL[kind]} «${a.name}» объединено с «${b.name}»`,
+        changes: { [REF_LABEL[kind]]: [a.name, b.name], ...Object.fromEntries(Object.entries(moved).map(([k, n]) => [k, [null, n]])) },
+      });
+    });
+    revalidatePath("/settings");
+    return { ok: `«${a.name}» объединено с «${b.name}»` };
   });
 }

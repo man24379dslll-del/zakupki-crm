@@ -3,6 +3,7 @@ import { createContext, startTransition, useActionState, useContext, useEffect, 
 import { useFormStatus } from "react-dom";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { btnClass, cn, type BtnVariant } from "./ui";
+import { Combobox } from "./combobox";
 
 export type ActionResult = { error?: string; ok?: string; needConfirm?: string } | undefined | void;
 export type FormAction = (prev: ActionResult, fd: FormData) => Promise<ActionResult>;
@@ -157,20 +158,19 @@ export function OrderItemsEditor({
   directions,
   initial,
 }: {
-  products: { id: string; name: string }[];
-  directions: { id: string; name: string }[];
+  products: { id: string; name: string; hint?: string | null }[];
+  directions: { id: string; name: string; hint?: string | null }[];
   initial?: { productId?: string; productName?: string; qty?: string; price?: string; directionId?: string }[];
 }) {
-  const [rows, setRows] = useState(initial?.length ? initial : [{}, {}]);
+  const nextKey = useRef(0);
+  const withKey = (r: NonNullable<typeof initial>[number]) => ({ ...r, _k: nextKey.current++ });
+  const [rows, setRows] = useState(() => (initial?.length ? initial : [{}, {}]).map(withKey));
   const [vals, setVals] = useState(() => (initial?.length ? initial : [{}, {}]).map((r) => ({ qty: r.qty ?? "", price: r.price ?? "" })));
   const total = vals.reduce((s, v) => s + (Number(v.qty.replace(",", ".")) || 0) * (Number(v.price.replace(",", ".")) || 0), 0);
+  const productOpts = products.map((p) => ({ value: p.id, label: p.name, hint: p.hint }));
+  const directionOpts = directions.map((d) => ({ value: d.id, label: d.name, hint: d.hint }));
   return (
     <div>
-      <datalist id="products-list">
-        {products.map((p) => (
-          <option key={p.id} value={p.name} />
-        ))}
-      </datalist>
       <div className="hidden grid-cols-12 gap-2 px-1 pb-1 text-xs font-medium text-slate-500 sm:grid">
         <div className="col-span-5">Товар</div>
         <div className="col-span-2">Количество</div>
@@ -180,8 +180,9 @@ export function OrderItemsEditor({
       </div>
       <div className="space-y-2">
         {rows.map((r, i) => (
-          <div key={i} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-100 p-2 sm:grid-cols-12 sm:border-0 sm:p-0">
-            <input name="item_product" list="products-list" defaultValue={r.productName} placeholder="Начните вводить название" className={cn("col-span-2 sm:col-span-5", "rounded-lg border border-slate-300 px-3 py-2 text-sm")} />
+          <div key={r._k} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-100 p-2 sm:grid-cols-12 sm:border-0 sm:p-0">
+            {/* free: можно вписать новый товар — сервер проверит похожие и спросит */}
+            <Combobox name="item_product" free options={productOpts} defaultValue={r.productName ?? ""} placeholder="Начните вводить название или артикул" className="col-span-2 sm:col-span-5" inputClassName="py-2" />
             <input
               name="item_qty"
               inputMode="decimal"
@@ -198,14 +199,7 @@ export function OrderItemsEditor({
               onChange={(e) => setVals((v) => v.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm sm:col-span-2"
             />
-            <select name="item_direction" defaultValue={r.directionId ?? ""} className="rounded-lg border border-slate-300 px-2 py-2 text-sm sm:col-span-2">
-              <option value="">как у заказа</option>
-              {directions.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+            <Combobox name="item_direction" options={directionOpts} defaultValue={r.directionId ?? ""} placeholder="как у заказа" className="sm:col-span-2" inputClassName="py-2" />
             <button
               type="button"
               className="text-sm text-slate-400 hover:text-rose-600 sm:col-span-1"
@@ -224,7 +218,7 @@ export function OrderItemsEditor({
           type="button"
           className={btnClass("secondary", "sm")}
           onClick={() => {
-            setRows((x) => [...x, {}]);
+            setRows((x) => [...x, withKey({})]);
             setVals((x) => [...x, { qty: "", price: "" }]);
           }}
         >

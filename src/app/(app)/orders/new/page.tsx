@@ -24,7 +24,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
         <Card title="Основное">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Поставщик" required className="sm:col-span-2">
-              <Select name="supplierId" required placeholder="Выберите поставщика" defaultValue={qp(sp, "supplier")} options={opt(o.suppliers)} />
+              <Select searchable name="supplierId" required placeholder="Начните вводить название или ИНН" defaultValue={qp(sp, "supplier")} options={opt(o.suppliers)} createPrefix={can(u, PERMS.suppliersEdit) ? "new:" : undefined} />
             </Field>
             <Field label="Дата заказа">
               <Input type="date" name="orderDate" defaultValue={d} />
@@ -33,10 +33,10 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
               <Select name="status" defaultValue="SENT" options={[{ value: "DRAFT", label: "Черновик" }, { value: "SENT", label: "Отправлен поставщику" }, { value: "CONFIRMED", label: "Подтверждён поставщиком" }, { value: "AWAITING", label: "Ожидает поставки" }]} />
             </Field>
             <Field label="Наше юрлицо">
-              <Select name="legalEntityId" placeholder="—" options={opt(o.legal)} />
+              <Select searchable name="legalEntityId" placeholder="—" options={opt(o.legal)} />
             </Field>
             <Field label="Направление">
-              <Select name="directionId" placeholder="—" options={opt(o.directions)} />
+              <Select searchable name="directionId" placeholder="—" options={opt(o.directions)} />
             </Field>
             <Field label="№ счёта">
               <Input name="invoiceNumber" />
@@ -49,7 +49,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
             </Field>
             {can(u, PERMS.ordersViewAll) && (
               <Field label="Закупщик">
-                <Select name="buyerId" defaultValue={u.id} options={opt(o.buyers)} />
+                <Select searchable name="buyerId" defaultValue={u.id} options={opt(o.buyers)} />
               </Field>
             )}
           </div>

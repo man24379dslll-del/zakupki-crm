@@ -50,7 +50,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       />
       <FilterBar base="/products" sp={sp}>
         <SearchInput sp={sp} placeholder="Название или артикул" />
-        <FSelect name="category" sp={sp} placeholder="Все категории" options={(cats.rows as { category: string }[]).map((c) => ({ value: c.category, label: c.category }))} />
+        <FSelect searchable name="category" sp={sp} placeholder="Все категории" options={(cats.rows as { category: string }[]).map((c) => ({ value: c.category, label: c.category }))} />
         <FSelect name="active" sp={sp} placeholder="Только активные" options={[{ value: "all", label: "Все, включая неактивные" }]} />
       </FilterBar>
       <Card pad={false}>

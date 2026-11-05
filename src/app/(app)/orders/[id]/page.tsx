@@ -63,7 +63,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     o.buyerId ? db.select().from(schema.users).where(eq(schema.users.id, o.buyerId)).then((r) => r[0]) : null,
     o.legalEntityId ? db.select().from(schema.legalEntities).where(eq(schema.legalEntities.id, o.legalEntityId)).then((r) => r[0]) : null,
     o.directionId ? db.select().from(schema.directions).where(eq(schema.directions.id, o.directionId)).then((r) => r[0]) : null,
-    canEdit ? selectOptions() : null,
+    canEdit ? selectOptions({ inactive: [o.legalEntityId, o.directionId] }) : null,
   ]);
   const items = itemsRes.rows as {
     id: string; qty: string; price: string | null; is_closed: boolean; closed_note: string | null; over_delivery_approved: boolean; note: string | null;
@@ -156,21 +156,21 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           <ActionForm action={updateOrderHeaderAction} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <input type="hidden" name="id" value={o.id} />
             <Field label="Поставщик" className="sm:col-span-2">
-              <Select name="supplierId" defaultValue={o.supplierId} options={opt(opts.suppliers)} />
+              <Select searchable name="supplierId" defaultValue={o.supplierId} options={opt(opts.suppliers)} />
             </Field>
             <Field label="Дата заказа">
               <Input type="date" name="orderDate" defaultValue={o.orderDate} />
             </Field>
             {can(u, PERMS.ordersViewAll) && (
               <Field label="Закупщик">
-                <Select name="buyerId" defaultValue={o.buyerId ?? ""} placeholder="не назначен" options={opt(opts.buyers)} />
+                <Select searchable name="buyerId" defaultValue={o.buyerId ?? ""} placeholder="не назначен" options={opt(opts.buyers)} />
               </Field>
             )}
             <Field label="Наше юрлицо">
-              <Select name="legalEntityId" defaultValue={o.legalEntityId ?? ""} placeholder="—" options={opt(opts.legal)} />
+              <Select searchable name="legalEntityId" defaultValue={o.legalEntityId ?? ""} placeholder="—" options={opt(opts.legal)} />
             </Field>
             <Field label="Направление">
-              <Select name="directionId" defaultValue={o.directionId ?? ""} placeholder="—" options={opt(opts.directions)} />
+              <Select searchable name="directionId" defaultValue={o.directionId ?? ""} placeholder="—" options={opt(opts.directions)} />
             </Field>
             <Field label="№ счёта">
               <Input name="invoiceNumber" defaultValue={o.invoiceNumber ?? ""} />
@@ -455,7 +455,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             <dl className="space-y-2 text-sm">
               {[
                 ["Закупщик", buyer?.name ?? "не назначен"],
-                ["Наше юрлицо", legal?.name],
+                ["Наше юрлицо", legal ? (legal.shortName ? `${legal.shortName} (${legal.name})` : legal.name) : null],
                 ["Направление", dir?.name],
                 ["Дата счёта", o.invoiceDate ? fmtDate(o.invoiceDate) : null],
                 ["Плановая поставка", o.plannedDeliveryDate ? fmtDate(o.plannedDeliveryDate) : null],

@@ -118,9 +118,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
         }
       />
       <FilterBar base="/calendar" sp={sp} keep={["m"]}>
-        <FSelect name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
-        <FSelect name="product" sp={sp} placeholder="Все товары" options={opt(opts.products)} className="w-full sm:w-72" />
-        {all && <FSelect name="buyer" sp={sp} placeholder="Все закупщики" options={opt(opts.buyers)} />}
+        <FSelect searchable name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
+        <FSelect searchable name="product" sp={sp} placeholder="Все товары" options={opt(opts.products)} className="w-full sm:w-72" />
+        {all && <FSelect searchable name="buyer" sp={sp} placeholder="Все закупщики" options={opt(opts.buyers)} />}
       </FilterBar>
 
       <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">

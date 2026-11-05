@@ -78,6 +78,8 @@ export const sessions = pgTable(
 export const legalEntities = pgTable("legal_entities", {
   id: id(),
   name: text("name").notNull(),
+  /// как юрлицо называют в отделе («Добрынин»); в списках показывается оно, полное — в подсказке
+  shortName: text("short_name"),
   key: text("key").notNull().unique(),
   inn: text("inn"),
   isActive: boolean("is_active").notNull().default(true),
@@ -87,6 +89,7 @@ export const directions = pgTable("directions", {
   id: id(),
   name: text("name").notNull(),
   key: text("key").notNull().unique(),
+  isActive: boolean("is_active").notNull().default(true),
 });
 
 export const suppliers = pgTable("suppliers", {
@@ -117,6 +120,26 @@ export const supplierBuyers = pgTable(
     isPrimary: boolean("is_primary").notNull().default(false),
   },
   (t) => [primaryKey({ columns: [t.supplierId, t.userId] })],
+);
+
+/// Договоры с поставщиком: история сохраняется, актуальный — последний по дате. Файлы — documents с entity_type = 'contract'
+export const supplierContracts = pgTable(
+  "supplier_contracts",
+  {
+    id: id(),
+    supplierId: uuid("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
+    number: text("number"),
+    date: date("date"),
+    /// null = бессрочный
+    validUntil: date("valid_until"),
+    note: text("note"),
+    createdById: uuid("created_by_id").references(() => users.id),
+    createdAt: created(),
+    /// когда напомнили об окончании (чтобы не повторять)
+    remindedAt: timestamp("reminded_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [index("contracts_supplier_idx").on(t.supplierId)],
 );
 
 export const products = pgTable(

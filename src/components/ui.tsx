@@ -1,6 +1,7 @@
 import Link from "next/link";
 import clsx from "clsx";
 import type { ReactNode } from "react";
+import { Combobox, type ComboOption } from "./combobox";
 
 export const cn = clsx;
 
@@ -91,7 +92,28 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea rows={3} {...props} className={cn(inputClass, props.className)} />;
 }
-export function Select({ options, placeholder, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { options: { value: string; label: string }[]; placeholder?: string }) {
+/** searchable — список с поиском по мере ввода (для справочников: поставщики, товары, юрлица…); короткие перечни — обычный select */
+export function Select({
+  options,
+  placeholder,
+  searchable,
+  createPrefix,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & { options: ComboOption[]; placeholder?: string; searchable?: boolean; createPrefix?: string }) {
+  if (searchable)
+    return (
+      <Combobox
+        name={props.name!}
+        options={options}
+        defaultValue={props.defaultValue === undefined ? "" : String(props.defaultValue)}
+        placeholder={placeholder}
+        required={props.required}
+        disabled={props.disabled}
+        createPrefix={createPrefix}
+        className={props.className}
+        inputClassName="py-2"
+      />
+    );
   return (
     <select {...props} className={cn(inputClass, "pr-8", props.className)}>
       {placeholder !== undefined && <option value="">{placeholder}</option>}

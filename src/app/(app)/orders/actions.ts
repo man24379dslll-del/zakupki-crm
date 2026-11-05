@@ -8,6 +8,7 @@ import { can, PERMS } from "@/lib/permissions";
 import { diff, logActivity, notify } from "@/lib/audit";
 import { fdate, fnum, fstr, safe, UserError } from "@/lib/forms";
 import { ensureProduct, findProductExact, linkProductSupplier, similarProducts } from "@/lib/services/refs";
+import { isSimilar, normKey } from "@/lib/normalize";
 import { assertOrderAccess, checkOverDelivery, itemProgress, recalcOrderStatus } from "@/lib/services/orders";
 import { ORDER_STATUS_LABEL, orderNo, today } from "@/lib/format";
 import type { ActionResult } from "@/components/client";
@@ -36,8 +37,21 @@ export async function createOrderAction(_: ActionResult, fd: FormData): Promise<
   let newId = "";
   const r = await safe(async () => {
     const u = await requirePerm(PERMS.ordersEdit);
-    const supplierId = fstr(fd.get("supplierId"));
+    let supplierId = fstr(fd.get("supplierId"));
     if (!supplierId) throw new UserError("Выберите поставщика");
+    // «+ Добавить поставщика» из списка: создаём с одним названием, реквизиты — потом в карточке
+    const newSupplier = supplierId.startsWith("new:") ? supplierId.slice(4).trim() : null;
+    if (newSupplier !== null) {
+      if (!newSupplier) throw new UserError("Укажите название поставщика");
+      if (!can(u, PERMS.suppliersEdit)) throw new UserError("Нет права добавлять поставщиков — выберите из списка");
+      const [ex] = await db.select().from(schema.suppliers).where(and(eq(schema.suppliers.key, normKey(newSupplier)), isNull(schema.suppliers.deletedAt)));
+      if (ex) supplierId = ex.id;
+      else if (!fd.get("confirm")) {
+        const all = await db.select({ name: schema.suppliers.name }).from(schema.suppliers).where(isNull(schema.suppliers.deletedAt));
+        const sim = all.filter((s) => isSimilar(s.name, newSupplier)).slice(0, 3);
+        if (sim.length) return { needConfirm: `Поставщик «${newSupplier}» похож на ${sim.map((s) => `«${s.name}»`).join(", ")}. Создать нового поставщика? Если это он же — выберите его из списка.` };
+      }
+    }
     const orderDate = fdate(fd.get("orderDate")) ?? today();
     const items = readItems(fd);
     if (!items.length) throw new UserError("Добавьте хотя бы один товар");
@@ -56,13 +70,20 @@ export async function createOrderAction(_: ActionResult, fd: FormData): Promise<
     }
 
     await db.transaction(async (tx) => {
+      if (supplierId!.startsWith("new:")) {
+        const name = supplierId!.slice(4).trim();
+        const [s] = await tx.insert(schema.suppliers).values({ name, key: normKey(name) }).returning();
+        await tx.insert(schema.supplierBuyers).values({ supplierId: s.id, userId: buyerId ?? u.id, isPrimary: true }).onConflictDoNothing();
+        await logActivity(tx, { userId: u.id, action: "create", entityType: "supplier", entityId: s.id, summary: `Создан поставщик «${name}» (из формы заказа)` });
+        supplierId = s.id;
+      }
       const [o] = await tx
         .insert(schema.purchaseOrders)
         .values({
           orderDate,
           buyerId,
           createdById: u.id,
-          supplierId,
+          supplierId: supplierId!,
           legalEntityId: fstr(fd.get("legalEntityId")),
           directionId: fstr(fd.get("directionId")),
           invoiceNumber: fstr(fd.get("invoiceNumber")),
@@ -77,7 +98,7 @@ export async function createOrderAction(_: ActionResult, fd: FormData): Promise<
       let i = 0;
       for (const it of items) {
         const p = await ensureProduct(tx, it.name);
-        await linkProductSupplier(tx, p.id, supplierId);
+        await linkProductSupplier(tx, p.id, supplierId!);
         await tx.insert(schema.purchaseOrderItems).values({ orderId: o.id, productId: p.id, directionId: it.directionId, qty: String(it.qty), price: it.price === null ? null : String(it.price), sortOrder: i++ });
       }
       const sum = items.reduce((s, x) => s + x.qty * (x.price ?? 0), 0);

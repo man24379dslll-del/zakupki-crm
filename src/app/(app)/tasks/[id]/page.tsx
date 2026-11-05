@@ -81,7 +81,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
                 <input type="hidden" name="id" value={id} />
                 <Field label="Название"><Input name="title" defaultValue={t.title!} /></Field>
                 <Field label="Описание"><Textarea name="description" defaultValue={t.description ?? ""} /></Field>
-                <Field label="Исполнитель"><Select name="assigneeId" defaultValue={t.assignee_id!} options={opt(opts.buyers)} /></Field>
+                <Field label="Исполнитель"><Select searchable name="assigneeId" defaultValue={t.assignee_id!} options={opt(opts.buyers)} /></Field>
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Срок"><Input type="date" name="dueDate" defaultValue={dueLocal[0]} /></Field>
                   <Field label="Время"><Input type="time" name="dueTime" defaultValue={dueLocal[1]} /></Field>

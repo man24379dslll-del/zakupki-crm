@@ -261,18 +261,49 @@ export async function buildPreview(p: ParseResult, settings: ImportSettings): Pr
 
 // ---------- выполнение ----------
 
-async function upsertByKey(tx: Tx, table: "suppliers" | "legal" | "directions", name: string, cache: Map<string, string>) {
+/**
+ * Направления — закрытый справочник (Настройки → Справочники): новые при импорте не создаются.
+ * «ПП - Поля», «ПП-осн» → «ПП» по первому слову; не нашлось — направление остаётся пустым.
+ */
+async function matchDirection(tx: Tx, name: string | null | undefined, cache: Map<string, string | null>) {
+  if (!name?.trim()) return null;
   const key = normKey(name);
   if (cache.has(key)) return cache.get(key)!;
-  const t = table === "suppliers" ? schema.suppliers : table === "legal" ? schema.legalEntities : schema.directions;
-  const [ex] = await tx.select({ id: t.id }).from(t).where(eq(t.key, key));
-  let id = ex?.id;
-  if (!id) {
-    const [c] = await tx.insert(t).values({ name: name.trim(), key } as never).returning({ id: t.id });
-    id = c.id;
-  }
+  const all = await tx.select({ id: schema.directions.id, key: schema.directions.key }).from(schema.directions);
+  const head = key.split(/[ -]/)[0];
+  const id = all.find((d) => d.key === key)?.id ?? all.find((d) => d.key === head)?.id ?? null;
   cache.set(key, id);
   return id;
+}
+
+/** Наше юрлицо из Excel; название, совпадающее с направлением (например «Фитотрейд»), юрлицом не считается */
+async function legalId(tx: Tx, name: string | null | undefined, cache: Map<string, string>) {
+  if (!name?.trim()) return null;
+  const [dir] = await tx.select({ id: schema.directions.id }).from(schema.directions).where(eq(schema.directions.key, normKey(name)));
+  if (dir) return null;
+  return upsertByKey(tx, "legal", name, cache);
+}
+
+async function upsertByKey(tx: Tx, table: "suppliers" | "legal", name: string, cache: Map<string, string>) {
+  const key = normKey(name);
+  if (cache.has(key)) return cache.get(key)!;
+  const t = table === "suppliers" ? schema.suppliers : schema.legalEntities;
+  const [ex] = await tx.select({ id: t.id }).from(t).where(eq(t.key, key));
+  let id: string | undefined = ex?.id;
+  // «ИП Елисеев Максим Анатолиевич», «Елисеев» и «ИП Елисеев Максим Анатольевич» — одно юрлицо (отчество в Excel пишут по-разному)
+  const surname = table === "legal" ? (/^ип\s+(\S+)/.exec(key)?.[1] ?? null) : null;
+  if (!id && table === "legal") {
+    const legal = await tx.select({ id: schema.legalEntities.id, key: schema.legalEntities.key, short: schema.legalEntities.shortName }).from(schema.legalEntities);
+    const names = (l: (typeof legal)[number]) => [l.short && normKey(l.short), /^ип\s+(\S+)/.exec(l.key)?.[1], l.key].filter(Boolean);
+    id = legal.find((l) => names(l).some((n) => n === key || n === surname))?.id;
+  }
+  if (!id) {
+    const v = table === "legal" ? { name: name.trim(), key, shortName: surname ? name.trim().split(/\s+/)[1] : null } : { name: name.trim(), key };
+    const [c] = await tx.insert(t).values(v as never).returning({ id: t.id });
+    id = c.id;
+  }
+  cache.set(key, id!);
+  return id!;
 }
 
 async function productId(tx: Tx, name: string, cache: Map<string, string>, category?: string) {
@@ -297,7 +328,7 @@ export async function executeImport(p: ParseResult, settings: ImportSettings, ba
   await db.transaction(async (tx) => {
     const supC = new Map<string, string>(),
       legC = new Map<string, string>(),
-      dirC = new Map<string, string>(),
+      dirC = new Map<string, string | null>(),
       prodC = new Map<string, string>();
     const orderIds: string[] = [];
     for (const s of p.sheets) {
@@ -313,9 +344,9 @@ export async function executeImport(p: ParseResult, settings: ImportSettings, ba
         const supplierId = await upsertByKey(tx, "suppliers", supplier, supC);
         if (st.buyerId) await tx.insert(schema.supplierBuyers).values({ supplierId, userId: st.buyerId, isPrimary: true }).onConflictDoNothing();
         const legalName = resolveName(settings, o.legalEntity);
-        const legalEntityId = legalName ? await upsertByKey(tx, "legal", legalName, legC) : null;
+        const legalEntityId = await legalId(tx, legalName, legC);
         const dirName = o.direction ?? o.items.find((i) => i.direction)?.direction ?? null;
-        const directionId = dirName ? await upsertByKey(tx, "directions", resolveName(settings, dirName)!, dirC) : null;
+        const directionId = await matchDirection(tx, dirName && resolveName(settings, dirName), dirC);
         const orderDate = o.orderDate ?? o.items.flatMap((i) => i.deliveries.map((d) => d.date)).filter(Boolean).sort()[0] ?? o.payments.map((x) => x.date).filter(Boolean).sort()[0] ?? new Date().toISOString().slice(0, 10);
         const notes: string[] = [];
         if (o.note) notes.push(o.note);
@@ -353,7 +384,7 @@ export async function executeImport(p: ParseResult, settings: ImportSettings, ba
           const qty = itemQty(it);
           const itemNotes: string[] = [`Excel: «${s.name}», стр. ${it.row}`];
           if (it.qty === null) itemNotes.push("кол-во заказа в Excel не указано — принято равным поставленному");
-          const itemDir = it.direction && it.direction !== dirName ? await upsertByKey(tx, "directions", resolveName(settings, it.direction)!, dirC) : directionId;
+          const itemDir = it.direction && it.direction !== dirName ? ((await matchDirection(tx, resolveName(settings, it.direction), dirC)) ?? directionId) : directionId;
           const [poi] = await tx
             .insert(schema.purchaseOrderItems)
             .values({
@@ -422,7 +453,7 @@ export async function executeImport(p: ParseResult, settings: ImportSettings, ba
           await tx.insert(schema.payments).values({
             supplierId,
             orderId: null,
-            legalEntityId: legalName ? await upsertByKey(tx, "legal", legalName, legC) : null,
+            legalEntityId: await legalId(tx, legalName, legC),
             type: "ADVANCE",
             method: "BANK",
             date: pay.date,
@@ -438,7 +469,7 @@ export async function executeImport(p: ParseResult, settings: ImportSettings, ba
         if (st.buyerId) await tx.insert(schema.supplierBuyers).values({ supplierId, userId: st.buyerId, isPrimary: true }).onConflictDoNothing();
         const pid = await productId(tx, resolveName(settings, r.product)!, prodC, "Приборы");
         await tx.insert(schema.productSuppliers).values({ productId: pid, supplierId }).onConflictDoNothing();
-        const legalEntityId = r.legalEntity ? await upsertByKey(tx, "legal", resolveName(settings, r.legalEntity)!, legC) : null;
+        const legalEntityId = await legalId(tx, resolveName(settings, r.legalEntity), legC);
         if (!r.weeks.length) {
           await tx.insert(schema.supplyPlanEntries).values({ supplierId, productId: pid, legalEntityId, status: r.status, note: r.note, importBatchId: batchId });
         }

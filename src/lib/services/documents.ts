@@ -27,6 +27,13 @@ export async function assertEntityAccess(u: SessionUser, entityType: string, ent
     case "supplier":
       if (write && !can(u, PERMS.ordersEdit) && !can(u, PERMS.suppliersEdit)) throw new AccessError();
       return;
+    case "contract": {
+      // файлы договора — как документы поставщика; менять может тот, кто правит поставщиков
+      const [c] = await db.select().from(schema.supplierContracts).where(eq(schema.supplierContracts.id, entityId));
+      if (!c) throw new AccessError("Не найдено");
+      if (write && !can(u, PERMS.suppliersEdit)) throw new AccessError();
+      return;
+    }
     case "task": {
       const [t] = await db.select().from(schema.tasks).where(eq(schema.tasks.id, entityId));
       if (!t) throw new AccessError("Не найдено");
@@ -38,6 +45,10 @@ export async function assertEntityAccess(u: SessionUser, entityType: string, ent
   }
 }
 
-export function entityPath(type: string, id: string) {
+export async function entityPath(type: string, id: string) {
+  if (type === "contract") {
+    const [c] = await db.select({ s: schema.supplierContracts.supplierId }).from(schema.supplierContracts).where(eq(schema.supplierContracts.id, id));
+    return c ? `/suppliers/${c.s}` : "/suppliers";
+  }
   return { order: `/orders/${id}`, supplier: `/suppliers/${id}`, task: `/tasks/${id}` }[type] ?? "/";
 }

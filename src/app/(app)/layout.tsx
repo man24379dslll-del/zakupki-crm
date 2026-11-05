@@ -8,6 +8,7 @@ import { logoutAction } from "@/app/actions/common";
 import { MobileNavToggle } from "@/components/client";
 import { NavLinks, type NavItem } from "./nav";
 import { ensureTaskReminders } from "@/lib/services/reminders";
+import { ensureContractReminders } from "@/lib/services/contracts";
 import { orderScope, ORDER_STATS, OVERDUE_SQL } from "@/lib/services/orders";
 import { ROLE_LABEL, today } from "@/lib/format";
 import { btnClass } from "@/components/ui";
@@ -25,7 +26,7 @@ async function counters(u: SessionUser) {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const u = await requireUser();
-  await ensureTaskReminders(u.id);
+  await Promise.all([ensureTaskReminders(u.id), ensureContractReminders()]);
   const c = await counters(u);
 
   const items: NavItem[] = [

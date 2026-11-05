@@ -67,8 +67,8 @@ async function Expected({ sp, all, opts, u }: { sp: SP; uId: string; all: boolea
       <FilterBar base="/deliveries" sp={sp} keep={["tab"]}>
         <SearchInput sp={sp} placeholder="Поставщик, счёт, товар" />
         <FSelect name="when" sp={sp} placeholder="Все сроки" options={[{ value: "overdue", label: "Просроченные" }, { value: "week", label: "На ближайшие 7 дней" }]} />
-        <FSelect name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
-        {all && <FSelect name="buyer" sp={sp} placeholder="Все закупщики" options={opt(opts.buyers)} />}
+        <FSelect searchable name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
+        {all && <FSelect searchable name="buyer" sp={sp} placeholder="Все закупщики" options={opt(opts.buyers)} />}
       </FilterBar>
       <Card pad={false}>
         {rows.length === 0 ? (
@@ -162,9 +162,9 @@ async function Log({ sp, all, opts, u }: { sp: SP; all: boolean; opts: Opts; u: 
     <>
       <FilterBar base="/deliveries" sp={sp} keep={["tab"]}>
         <SearchInput sp={sp} placeholder="Поставщик, накладная, счёт" />
-        <FSelect name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
-        <FSelect name="product" sp={sp} placeholder="Все товары" options={opt(opts.products)} />
-        {all && <FSelect name="buyer" sp={sp} placeholder="Все закупщики" options={opt(opts.buyers)} />}
+        <FSelect searchable name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
+        <FSelect searchable name="product" sp={sp} placeholder="Все товары" options={opt(opts.products)} />
+        {all && <FSelect searchable name="buyer" sp={sp} placeholder="Все закупщики" options={opt(opts.buyers)} />}
         <FDate name="from" sp={sp} label="с" />
         <FDate name="to" sp={sp} label="по" />
       </FilterBar>

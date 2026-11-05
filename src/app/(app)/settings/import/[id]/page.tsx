@@ -4,7 +4,8 @@ import { loadImport } from "@/lib/import/load";
 import { buildPreview } from "@/lib/import/importer";
 import { colLetter, type ColumnMapping } from "@/lib/import/parser";
 import { normKey } from "@/lib/normalize";
-import { selectOptions } from "@/lib/services/refs";
+import { opt, selectOptions } from "@/lib/services/refs";
+import { Combobox } from "@/components/combobox";
 import { fmtDate, fmtMoney, fmtQty, ORDER_STATUS_LABEL } from "@/lib/format";
 import { Alert, Badge, Card, cn, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/client";
@@ -112,10 +113,7 @@ export default async function ImportPreview({ params }: { params: Promise<{ id: 
                     <Td right className="text-xs">{s.kind === "plan" ? "—" : cmp(s.totals.delivered, s.excel?.delivered, false)}</Td>
                     <Td right className="text-xs">{s.kind === "plan" ? "—" : cmp(s.totals.paid, s.excel?.paid)}{s.supplierPayments > 0 && <div className="text-slate-500">+ {s.supplierPayments} авансов без счёта</div>}</Td>
                     <Td>
-                      <select name={`buyer_${k}`} defaultValue={st?.buyerId ?? ""} disabled={done} className="rounded border border-slate-300 px-1 py-1 text-xs">
-                        <option value="">не назначать</option>
-                        {opts.buyers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
+                      <Combobox name={`buyer_${k}`} defaultValue={st?.buyerId ?? ""} disabled={done} placeholder="не назначать" options={opt(opts.buyers)} className="w-44" inputClassName="py-1 text-xs" />
                     </Td>
                     <Td><input name={`sup_${k}`} defaultValue={st?.supplierName ?? ""} disabled={done} placeholder="—" className="w-36 rounded border border-slate-300 px-2 py-1 text-xs" /></Td>
                   </tr>

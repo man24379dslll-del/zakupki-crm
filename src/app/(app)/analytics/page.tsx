@@ -102,9 +102,9 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
       <FilterBar base="/analytics" sp={sp}>
         <FDate name="from" sp={sp} label="с" />
         <FDate name="to" sp={sp} label="по" />
-        <FSelect name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
-        <FSelect name="product" sp={sp} placeholder="Все товары" options={opt(opts.products)} />
-        <FSelect name="buyer" sp={sp} placeholder="Все закупщики" options={[{ value: "none", label: "Не назначен" }, ...opt(opts.buyers)]} />
+        <FSelect searchable name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
+        <FSelect searchable name="product" sp={sp} placeholder="Все товары" options={opt(opts.products)} />
+        <FSelect searchable name="buyer" sp={sp} placeholder="Все закупщики" options={[{ value: "none", label: "Не назначен" }, ...opt(opts.buyers)]} />
       </FilterBar>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Заказов" value={k.orders} />

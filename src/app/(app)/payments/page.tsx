@@ -111,7 +111,7 @@ async function Log({ u, sp, opts }: { u: U; sp: SP; opts: Awaited<ReturnType<typ
   const q = qp(sp, "q");
   if (q) w.push(sql`(s.name ILIKE ${"%" + q + "%"} OR p.doc_number ILIKE ${"%" + q + "%"} OR p.comment ILIKE ${"%" + q + "%"} OR o.invoice_number ILIKE ${"%" + q + "%"})`);
   const res = await db.execute(sql`
-    SELECT p.*, s.name AS supplier, o.number, le.name AS legal, COUNT(*) OVER()::int AS total, SUM(p.amount) OVER() AS sum_all
+    SELECT p.*, s.name AS supplier, o.number, COALESCE(le.short_name, le.name) AS legal, COUNT(*) OVER()::int AS total, SUM(p.amount) OVER() AS sum_all
     FROM payments p JOIN suppliers s ON s.id = p.supplier_id LEFT JOIN purchase_orders o ON o.id = p.order_id LEFT JOIN legal_entities le ON le.id = p.legal_entity_id
     WHERE ${sql.join(w, sql` AND `)} ORDER BY p.date DESC NULLS FIRST, p.created_at DESC LIMIT ${limit} OFFSET ${offset}`);
   const rows = res.rows as { id: string; date: string | null; amount: string; type: string; method: string; doc_number: string | null; comment: string | null; order_id: string | null; number: number | null; supplier: string; supplier_id: string; legal: string | null; total: number; sum_all: string }[];
@@ -119,7 +119,7 @@ async function Log({ u, sp, opts }: { u: U; sp: SP; opts: Awaited<ReturnType<typ
     <>
       <FilterBar base="/payments" sp={sp} keep={["tab"]}>
         <SearchInput sp={sp} placeholder="Поставщик, № ПП, счёт" />
-        <FSelect name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
+        <FSelect searchable name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
         <FSelect name="type" sp={sp} placeholder="Все типы" options={[...Object.entries(PAYMENT_TYPE_LABEL).map(([v, l]) => ({ value: v, label: l })), { value: "noorder", label: "Без привязки к заказу" }]} />
         <FDate name="from" sp={sp} label="с" />
         <FDate name="to" sp={sp} label="по" />

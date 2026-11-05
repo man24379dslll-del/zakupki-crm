@@ -2,12 +2,13 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq, isNull, ne } from "drizzle-orm";
-import { db, schema } from "@/db";
+import { db, schema, type Tx } from "@/db";
 import { clientIp, requirePerm } from "@/lib/auth";
 import { PERMS, can } from "@/lib/permissions";
 import { diff, logActivity, notify } from "@/lib/audit";
 import { fdate, fstr, safe, UserError } from "@/lib/forms";
 import { normKey } from "@/lib/normalize";
+import { formFiles, saveUploadedFiles } from "@/lib/services/contracts";
 import type { ActionResult } from "@/components/client";
 
 const LABELS = {
@@ -53,6 +54,7 @@ export async function createSupplierAction(_: ActionResult, fd: FormData): Promi
   const r = await safe(async () => {
     const u = await requirePerm(PERMS.suppliersEdit);
     const v = read(fd);
+    const contract = readContract(fd);
     const key = normKey(v.name);
     const [ex] = await db.select().from(schema.suppliers).where(eq(schema.suppliers.key, key));
     if (ex) throw new UserError(`Поставщик «${ex.name}» уже есть в справочнике`);
@@ -62,6 +64,7 @@ export async function createSupplierAction(_: ActionResult, fd: FormData): Promi
       // создавший закупщик становится ответственным
       if (u.role === "BUYER") await tx.insert(schema.supplierBuyers).values({ supplierId: s.id, userId: u.id, isPrimary: true });
       await logActivity(tx, { userId: u.id, action: "create", entityType: "supplier", entityId: s.id, summary: `Создан поставщик «${v.name}»`, ip: await clientIp() });
+      if (contract.filled) await createContract(tx, s.id, v.name, contract, u.id);
     });
   });
   if (r && "error" in r) return r;
@@ -124,3 +127,68 @@ export async function deleteSupplierAction(_: ActionResult, fd: FormData): Promi
 }
 
 void can;
+
+// ---------- договоры с поставщиком ----------
+
+const CONTRACT_LABELS = { number: "№ договора", date: "Дата договора", validUntil: "Действует до", note: "Примечание" };
+
+/** Поля договора из формы (префикс contract — чтобы их можно было встроить в форму поставщика) */
+function readContract(fd: FormData) {
+  const perpetual = fd.get("contractPerpetual") === "on";
+  const v = {
+    number: fstr(fd.get("contractNumber")),
+    date: fdate(fd.get("contractDate")),
+    validUntil: perpetual ? null : fdate(fd.get("contractUntil")),
+    note: fstr(fd.get("contractNote")),
+  };
+  const files = formFiles(fd, "contractFile");
+  const filled = !!(v.number || v.date || v.validUntil || v.note || files.length || perpetual);
+  // срок не указан — договор бессрочный; введённая, но нераспознанная дата — ошибка
+  if (!perpetual && fstr(fd.get("contractUntil")) && !v.validUntil) throw new UserError("Неверная дата окончания договора");
+  if (v.date && v.validUntil && v.validUntil < v.date) throw new UserError("Дата окончания договора раньше даты договора");
+  return { v, files, filled };
+}
+
+async function createContract(tx: Tx, supplierId: string, supplierName: string, c: ReturnType<typeof readContract>, userId: string) {
+  const [row] = await tx.insert(schema.supplierContracts).values({ supplierId, ...c.v, createdById: userId }).returning();
+  await saveUploadedFiles(tx, "contract", row.id, c.files, userId);
+  await logActivity(tx, { userId, action: "create", entityType: "supplier", entityId: supplierId, summary: `Добавлен договор${c.v.number ? ` № ${c.v.number}` : ""} с «${supplierName}»${c.files.length ? `, файлов: ${c.files.length}` : ""}` });
+  return row;
+}
+
+export async function saveContractAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return safe(async () => {
+    const u = await requirePerm(PERMS.suppliersEdit);
+    const supplierId = String(fd.get("supplierId"));
+    const [s] = await db.select().from(schema.suppliers).where(and(eq(schema.suppliers.id, supplierId), isNull(schema.suppliers.deletedAt)));
+    if (!s) throw new UserError("Поставщик не найден");
+    const c = readContract(fd);
+    if (!c.filled) throw new UserError("Заполните номер, дату или прикрепите файл договора");
+    const id = fstr(fd.get("contractId"));
+    await db.transaction(async (tx) => {
+      if (!id) return void (await createContract(tx, supplierId, s.name, c, u.id));
+      const [before] = await tx.select().from(schema.supplierContracts).where(and(eq(schema.supplierContracts.id, id), eq(schema.supplierContracts.supplierId, supplierId), isNull(schema.supplierContracts.deletedAt)));
+      if (!before) throw new UserError("Договор не найден");
+      const changes = diff(before as unknown as Record<string, unknown>, c.v, CONTRACT_LABELS);
+      // новый срок — напомнить заново
+      const remindedAt = before.validUntil !== c.v.validUntil ? null : before.remindedAt;
+      await tx.update(schema.supplierContracts).set({ ...c.v, remindedAt }).where(eq(schema.supplierContracts.id, id));
+      await saveUploadedFiles(tx, "contract", id, c.files, u.id);
+      if (Object.keys(changes).length) await logActivity(tx, { userId: u.id, action: "update", entityType: "supplier", entityId: supplierId, summary: `Изменён договор${c.v.number ? ` № ${c.v.number}` : ""}`, changes });
+    });
+    revalidatePath(`/suppliers/${supplierId}`);
+    return { ok: "Договор сохранён" };
+  });
+}
+
+export async function deleteContractAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return safe(async () => {
+    const u = await requirePerm(PERMS.suppliersEdit);
+    const id = String(fd.get("id"));
+    const [c] = await db.select().from(schema.supplierContracts).where(eq(schema.supplierContracts.id, id));
+    if (!c) throw new UserError("Договор не найден");
+    await db.update(schema.supplierContracts).set({ deletedAt: new Date() }).where(eq(schema.supplierContracts.id, id));
+    await logActivity(db, { userId: u.id, action: "delete", entityType: "supplier", entityId: c.supplierId, summary: `Удалён договор${c.number ? ` № ${c.number}` : ""}` });
+    revalidatePath(`/suppliers/${c.supplierId}`);
+  });
+}

@@ -92,7 +92,7 @@ export async function listOrders(u: SessionUser, p: OrderListParams = {}): Promi
     WITH ${ORDER_STATS}
     SELECT o.id, o.number, o.order_date, o.status, o.invoice_number, o.planned_delivery_date,
       o.supplier_id, s.name AS supplier_name, o.buyer_id, u.name AS buyer_name,
-      le.name AS legal_entity_name, dir.name AS direction_name,
+      COALESCE(le.short_name, le.name) AS legal_entity_name, dir.name AS direction_name,
       COALESCE(os.amount,0) AS amount, COALESCE(os.qty,0) AS qty, COALESCE(os.delivered,0) AS delivered,
       COALESCE(os.delivered_amount,0) AS delivered_amount, COALESCE(os.remaining,0) AS remaining,
       COALESCE(ps.paid,0) AS paid, COALESCE(os.items_count,0)::int AS items_count, COALESCE(os.has_null_price,false) AS has_null_price,

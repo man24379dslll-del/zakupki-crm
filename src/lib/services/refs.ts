@@ -60,15 +60,34 @@ export async function linkProductSupplier(tx: X, productId: string, supplierId: 
   await tx.insert(schema.productSuppliers).values({ productId, supplierId }).onConflictDoNothing();
 }
 
-export async function selectOptions() {
+type Ref = { id: string; name: string; hint?: string | null };
+
+/**
+ * Варианты для выпадающих списков. hint — по нему тоже ищут (ИНН, артикул, полное название юрлица).
+ * Скрытые юрлица и направления не предлагаются; inactive: true — показать все (фильтры по истории),
+ * массив id — добавить только эти (текущее значение редактируемого заказа).
+ */
+export async function selectOptions(o: { inactive?: true | (string | null | undefined)[] } = {}) {
+  const keep = (active: boolean, id: string) => active || o.inactive === true || (Array.isArray(o.inactive) && o.inactive.includes(id));
   const [suppliers, products, legal, directions, buyers] = await Promise.all([
-    db.select({ id: schema.suppliers.id, name: schema.suppliers.name }).from(schema.suppliers).where(isNull(schema.suppliers.deletedAt)).orderBy(asc(schema.suppliers.name)),
-    db.select({ id: schema.products.id, name: schema.products.name }).from(schema.products).where(and(isNull(schema.products.mergedIntoId), eq(schema.products.isActive, true))).orderBy(asc(schema.products.name)),
-    db.select({ id: schema.legalEntities.id, name: schema.legalEntities.name }).from(schema.legalEntities).where(eq(schema.legalEntities.isActive, true)).orderBy(asc(schema.legalEntities.name)),
-    db.select({ id: schema.directions.id, name: schema.directions.name }).from(schema.directions).orderBy(asc(schema.directions.name)),
+    db.select({ id: schema.suppliers.id, name: schema.suppliers.name, hint: schema.suppliers.inn }).from(schema.suppliers).where(isNull(schema.suppliers.deletedAt)).orderBy(asc(schema.suppliers.name)),
+    db.select({ id: schema.products.id, name: schema.products.name, hint: schema.products.sku }).from(schema.products).where(and(isNull(schema.products.mergedIntoId), eq(schema.products.isActive, true))).orderBy(asc(schema.products.name)),
+    db.select().from(schema.legalEntities).orderBy(asc(sql`COALESCE(${schema.legalEntities.shortName}, ${schema.legalEntities.name})`)),
+    db.select().from(schema.directions).orderBy(asc(schema.directions.name)),
     db.execute(sql`SELECT u.id, u.name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.is_active AND r.code IN ('BUYER','ADMIN') ORDER BY u.name`),
   ]);
-  return { suppliers, products, legal, directions, buyers: buyers.rows as { id: string; name: string }[] };
+  return {
+    suppliers,
+    products,
+    legal: legal
+      .filter((l) => keep(l.isActive, l.id))
+      .map((l): Ref => ({ id: l.id, name: l.shortName || l.name, hint: [l.shortName ? l.name : null, l.isActive ? null : "скрыто"].filter(Boolean).join(" · ") || null })),
+    directions: directions.filter((d) => keep(d.isActive, d.id)).map((d): Ref => ({ id: d.id, name: d.name, hint: d.isActive ? null : "скрыто" })),
+    buyers: buyers.rows as Ref[],
+  };
 }
 
-export const opt = (rows: { id: string; name: string }[]) => rows.map((r) => ({ value: r.id, label: r.name }));
+export const opt = (rows: Ref[]) => rows.map((r) => ({ value: r.id, label: r.name, hint: r.hint ?? null }));
+
+/** Как показывать юрлицо: короткое название, если задано */
+export const legalLabel = (l: { name: string; shortName?: string | null } | null | undefined) => (l ? l.shortName || l.name : null);

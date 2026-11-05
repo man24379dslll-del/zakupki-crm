@@ -21,7 +21,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const { page, limit, offset } = pageParams(sp);
   const [rows, opts, views] = await Promise.all([
     listOrders(u, { where: orderFilters(sp), orderBy: orderSort(sp), limit, offset }),
-    selectOptions(),
+    selectOptions({ inactive: true }),
     db.select().from(schema.savedViews).where(and(eq(schema.savedViews.userId, u.id), eq(schema.savedViews.page, "/orders"))),
   ]);
   const total = rows[0]?.total_count ?? 0;
@@ -48,10 +48,10 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <FilterBar base={base} sp={sp}>
         <SearchInput sp={sp} placeholder="№ заказа, счёт, товар, поставщик" />
         <FSelect name="status" sp={sp} placeholder="Все статусы" options={[{ value: "active", label: "Активные" }, { value: "overdue", label: "Просроченные" }, ...Object.entries(ORDER_STATUS_LABEL).map(([v, l]) => ({ value: v, label: l }))]} />
-        <FSelect name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
-        {all && <FSelect name="buyer" sp={sp} placeholder="Все закупщики" options={[{ value: "none", label: "Не назначен" }, ...opt(opts.buyers)]} />}
-        <FSelect name="legal" sp={sp} placeholder="Все юрлица" options={opt(opts.legal)} />
-        <FSelect name="direction" sp={sp} placeholder="Все направления" options={opt(opts.directions)} />
+        <FSelect searchable name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
+        {all && <FSelect searchable name="buyer" sp={sp} placeholder="Все закупщики" options={[{ value: "none", label: "Не назначен" }, ...opt(opts.buyers)]} />}
+        <FSelect searchable name="legal" sp={sp} placeholder="Все юрлица" options={opt(opts.legal)} />
+        <FSelect searchable name="direction" sp={sp} placeholder="Все направления" options={opt(opts.directions)} />
         <FDate name="from" sp={sp} label="с" />
         <FDate name="to" sp={sp} label="по" />
       </FilterBar>

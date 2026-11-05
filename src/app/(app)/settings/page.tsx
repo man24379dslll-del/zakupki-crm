@@ -5,11 +5,12 @@ import { requireUser } from "@/lib/auth";
 import { can, PERMS } from "@/lib/permissions";
 import { fmtDate, fmtDateTime, fmtMoney, orderNo } from "@/lib/format";
 import { storageKind } from "@/lib/storage";
-import { Alert, Badge, Card, Empty, Field, Input, PageHeader, Select, Table, Tabs, Td, Th } from "@/components/ui";
+import { Alert, Badge, Card, cn, Empty, Field, Input, PageHeader, Select, Table, Tabs, Td, Th } from "@/components/ui";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/client";
 import { ChangesView } from "@/components/blocks";
+import { Combobox } from "@/components/combobox";
 import { FDate, FilterBar, FSelect, pageParams, Pagination, qp, SearchInput, type SP } from "@/components/list";
-import { restoreRecordAction, rollbackImportAction, saveSettingsAction, uploadImportAction } from "./actions";
+import { mergeRefAction, restoreRecordAction, rollbackImportAction, saveRefAction, saveSettingsAction, toggleRefAction, uploadImportAction } from "./actions";
 
 export const metadata = { title: "Настройки" };
 
@@ -18,6 +19,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const u = await requireUser();
   const tabs = [
     ...(can(u, PERMS.importRun) ? [{ key: "import", label: "Импорт Excel" }] : []),
+    ...(can(u, PERMS.settingsEdit) ? [{ key: "refs", label: "Справочники" }] : []),
     ...(can(u, PERMS.auditView) ? [{ key: "audit", label: "Журнал действий" }] : []),
     ...(can(u, PERMS.deleteRecords) ? [{ key: "deleted", label: "Удалённые" }] : []),
     ...(can(u, PERMS.settingsEdit) ? [{ key: "params", label: "Параметры и резервные копии" }] : []),
@@ -29,6 +31,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <PageHeader title="Настройки" />
       <Tabs base="/settings" current={tab} tabs={tabs} />
       {tab === "import" && <ImportTab />}
+      {tab === "refs" && <RefsTab />}
       {tab === "audit" && <AuditTab sp={sp} />}
       {tab === "deleted" && <DeletedTab />}
       {tab === "params" && <ParamsTab />}
@@ -75,7 +78,7 @@ async function ImportTab() {
   );
 }
 
-const ENTITY_LABEL: Record<string, string> = { order: "Заказ", delivery: "Поставка", payment: "Оплата", supplier: "Поставщик", product: "Товар", task: "Задача", user: "Пользователь", import: "Импорт", settings: "Настройки" };
+const ENTITY_LABEL: Record<string, string> = { legal: "Юрлицо", direction: "Направление", contract: "Договор", order: "Заказ", delivery: "Поставка", payment: "Оплата", supplier: "Поставщик", product: "Товар", task: "Задача", user: "Пользователь", import: "Импорт", settings: "Настройки" };
 const ACTION_LABEL: Record<string, string> = { create: "создание", update: "изменение", delete: "удаление", status: "статус", login: "вход", import: "импорт", rollback: "откат", restore: "восстановление", merge: "объединение", upload: "файл", delivery: "поставка", payment: "оплата" };
 
 async function AuditTab({ sp }: { sp: SP }) {
@@ -103,7 +106,7 @@ async function AuditTab({ sp }: { sp: SP }) {
     <>
       <FilterBar base="/settings" sp={sp} keep={["tab"]}>
         <SearchInput sp={sp} placeholder="Текст, сумма, название" />
-        <FSelect name="user" sp={sp} placeholder="Все сотрудники" options={users.map((x) => ({ value: x.id, label: x.name }))} />
+        <FSelect searchable name="user" sp={sp} placeholder="Все сотрудники" options={users.map((x) => ({ value: x.id, label: x.name }))} />
         <FSelect name="entity" sp={sp} placeholder="Все объекты" options={Object.entries(ENTITY_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
         <FSelect name="action" sp={sp} placeholder="Все действия" options={Object.entries(ACTION_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
         <FDate name="from" sp={sp} label="с" />
@@ -201,3 +204,103 @@ async function ParamsTab() {
 void fmtDate;
 void fmtMoney;
 void orderNo;
+
+/** Наши юрлица и направления: добавление, переименование, скрытие, объединение дублей */
+async function RefsTab() {
+  const [legal, dirs] = await Promise.all([
+    db.execute(sql`SELECT l.id, l.name, l.short_name, l.inn, l.is_active,
+        (SELECT count(*) FROM purchase_orders o WHERE o.legal_entity_id = l.id AND o.deleted_at IS NULL)::int AS orders,
+        (SELECT count(*) FROM payments p WHERE p.legal_entity_id = l.id AND p.deleted_at IS NULL)::int AS payments
+      FROM legal_entities l ORDER BY l.is_active DESC, COALESCE(l.short_name, l.name)`),
+    db.execute(sql`SELECT d.id, d.name, d.is_active,
+        (SELECT count(*) FROM purchase_orders o WHERE o.direction_id = d.id AND o.deleted_at IS NULL)::int AS orders,
+        (SELECT count(*) FROM purchase_order_items i WHERE i.direction_id = d.id)::int AS items
+      FROM directions d ORDER BY d.is_active DESC, d.name`),
+  ]);
+  type L = { id: string; name: string; short_name: string | null; inn: string | null; is_active: boolean; orders: number; payments: number };
+  type D = { id: string; name: string; is_active: boolean; orders: number; items: number };
+  const L = legal.rows as L[];
+  const D = dirs.rows as D[];
+  const cell = "rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm";
+  return (
+    <div className="space-y-4">
+      <Card title="Наши юрлица">
+        <p className="mb-3 text-sm text-slate-600">
+          В списках заказов и оплат показывается <b>короткое название</b> («Добрынин»), полное — в подсказке и в выгрузках. Скрытое юрлицо не предлагается в новых заказах, старые заказы не меняются. Дубль можно объединить с основным: все его заказы и оплаты перейдут туда.
+        </p>
+        <div className="space-y-2">
+          {L.map((l) => (
+            <div key={l.id} className={cn("flex flex-wrap items-start gap-2 rounded-lg border p-2", l.is_active ? "border-slate-200" : "border-dashed border-slate-300 bg-slate-50")}>
+              <ActionForm action={saveRefAction} className="flex flex-wrap items-center gap-2">
+                <input type="hidden" name="kind" value="legal" />
+                <input type="hidden" name="id" value={l.id} />
+                <input name="shortName" defaultValue={l.short_name ?? ""} placeholder="Короткое" className={cn(cell, "w-36")} />
+                <input name="name" defaultValue={l.name} required placeholder="Полное название" className={cn(cell, "w-72")} />
+                <input name="inn" defaultValue={l.inn ?? ""} placeholder="ИНН" inputMode="numeric" className={cn(cell, "w-36")} />
+                <SubmitButton size="sm" variant="secondary">Сохранить</SubmitButton>
+              </ActionForm>
+              <span className="self-center text-xs text-slate-500">заказов {l.orders} · оплат {l.payments}{!l.is_active && " · скрыто"}</span>
+              <div className="ml-auto flex flex-wrap items-start gap-2">
+                <ActionForm action={toggleRefAction}>
+                  <input type="hidden" name="kind" value="legal" />
+                  <input type="hidden" name="id" value={l.id} />
+                  <SubmitButton size="sm" variant="ghost">{l.is_active ? "Скрыть" : "Показывать"}</SubmitButton>
+                </ActionForm>
+                <MergeForm kind="legal" id={l.id} options={L.filter((x) => x.id !== l.id).map((x) => ({ value: x.id, label: x.short_name || x.name, hint: x.short_name ? x.name : null }))} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <ActionForm action={saveRefAction} resetOnOk className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+          <input type="hidden" name="kind" value="legal" />
+          <input name="shortName" placeholder="Короткое: Елисеев" className={cn(cell, "w-40")} />
+          <input name="name" required placeholder="Полное: ИП Елисеев Максим Анатольевич" className={cn(cell, "w-80")} />
+          <input name="inn" placeholder="ИНН" inputMode="numeric" className={cn(cell, "w-36")} />
+          <SubmitButton size="sm">+ Добавить юрлицо</SubmitButton>
+        </ActionForm>
+      </Card>
+
+      <Card title="Направления">
+        <p className="mb-3 text-sm text-slate-600">При импорте Excel новые направления не создаются: «ПП - Поля», «ПП-осн» и т. п. относятся к «ПП», незнакомое направление остаётся пустым.</p>
+        <div className="space-y-2">
+          {D.map((d) => (
+            <div key={d.id} className={cn("flex flex-wrap items-start gap-2 rounded-lg border p-2", d.is_active ? "border-slate-200" : "border-dashed border-slate-300 bg-slate-50")}>
+              <ActionForm action={saveRefAction} className="flex flex-wrap items-center gap-2">
+                <input type="hidden" name="kind" value="direction" />
+                <input type="hidden" name="id" value={d.id} />
+                <input name="name" defaultValue={d.name} required className={cn(cell, "w-56")} />
+                <SubmitButton size="sm" variant="secondary">Сохранить</SubmitButton>
+              </ActionForm>
+              <span className="self-center text-xs text-slate-500">заказов {d.orders} · позиций {d.items}{!d.is_active && " · скрыто"}</span>
+              <div className="ml-auto flex flex-wrap items-start gap-2">
+                <ActionForm action={toggleRefAction}>
+                  <input type="hidden" name="kind" value="direction" />
+                  <input type="hidden" name="id" value={d.id} />
+                  <SubmitButton size="sm" variant="ghost">{d.is_active ? "Скрыть" : "Показывать"}</SubmitButton>
+                </ActionForm>
+                <MergeForm kind="direction" id={d.id} options={D.filter((x) => x.id !== d.id).map((x) => ({ value: x.id, label: x.name }))} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <ActionForm action={saveRefAction} resetOnOk className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+          <input type="hidden" name="kind" value="direction" />
+          <input name="name" required placeholder="Название направления" className={cn(cell, "w-56")} />
+          <SubmitButton size="sm">+ Добавить направление</SubmitButton>
+        </ActionForm>
+      </Card>
+    </div>
+  );
+}
+
+function MergeForm({ kind, id, options }: { kind: "legal" | "direction"; id: string; options: { value: string; label: string; hint?: string | null }[] }) {
+  if (!options.length) return null;
+  return (
+    <ActionForm action={mergeRefAction} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="kind" value={kind} />
+      <input type="hidden" name="id" value={id} />
+      <Combobox name="target" options={options} placeholder="Объединить с…" className="w-48" />
+      <SubmitButton size="sm" variant="secondary">Объединить</SubmitButton>
+    </ActionForm>
+  );
+}

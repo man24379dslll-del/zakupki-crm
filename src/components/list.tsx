@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { btnClass, cn } from "./ui";
+import { Combobox, type ComboOption } from "./combobox";
 
 export type SP = Record<string, string | string[] | undefined>;
 
@@ -55,7 +56,8 @@ export function SearchInput({ sp, placeholder = "Поиск…" }: { sp: SP; pla
   );
 }
 
-export function FSelect({ name, sp, options, placeholder, className }: { name: string; sp: SP; options: { value: string; label: string }[]; placeholder: string; className?: string }) {
+export function FSelect({ name, sp, options, placeholder, className, searchable }: { name: string; sp: SP; options: ComboOption[]; placeholder: string; className?: string; searchable?: boolean }) {
+  if (searchable) return <Combobox name={name} options={options} defaultValue={qp(sp, name)} placeholder={placeholder} className={className ?? "w-full sm:w-56"} />;
   return (
     <select name={name} defaultValue={qp(sp, name)} className={cn("rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm", className)}>
       <option value="">{placeholder}</option>

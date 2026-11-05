@@ -1,4 +1,29 @@
-import { Field, Input, Select, Textarea } from "@/components/ui";
+import { Field, Input, Select, Textarea, cn } from "@/components/ui";
+
+type C = { number?: string | null; date?: string | null; validUntil?: string | null; note?: string | null };
+
+/** Поля договора с поставщиком (в форме нового поставщика и в блоке «Договоры») */
+export function ContractFields({ c = {}, compact }: { c?: C; compact?: boolean }) {
+  return (
+    <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2", !compact && "lg:grid-cols-4")}>
+      <Field label="№ договора">
+        <Input name="contractNumber" defaultValue={c.number ?? ""} placeholder="например, 15/2025" />
+      </Field>
+      <Field label="Дата договора">
+        <Input name="contractDate" type="date" defaultValue={c.date ?? ""} />
+      </Field>
+      <Field label="Действует до" hint="Пусто — бессрочный. За 30 дней до окончания придёт напоминание">
+        <Input name="contractUntil" type="date" defaultValue={c.validUntil ?? ""} />
+      </Field>
+      <Field label={c.number || c.date ? "Добавить файлы" : "Файлы: скан, PDF, допсоглашения"}>
+        <input type="file" name="contractFile" multiple className="text-sm file:mr-2 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm" />
+      </Field>
+      <Field label="Примечание" className={cn("sm:col-span-2", !compact && "lg:col-span-4")}>
+        <Input name="contractNote" defaultValue={c.note ?? ""} placeholder="условия оплаты, отсрочка, особенности" />
+      </Field>
+    </div>
+  );
+}
 import { SUPPLIER_STATUS_LABEL } from "@/lib/format";
 
 type S = Partial<Record<"name" | "legalName" | "inn" | "contactPerson" | "phone" | "email" | "address" | "bankDetails" | "activity" | "comment" | "status" | "startedAt", string | null>>;

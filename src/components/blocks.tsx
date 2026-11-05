@@ -86,15 +86,22 @@ export async function CommentsBlock({ entityType, entityId, canEdit }: { entityT
 
 export function ChangesView({ changes }: { changes: unknown }) {
   if (!changes || typeof changes !== "object") return null;
-  const entries = Object.entries(changes as Record<string, [unknown, unknown]>);
+  const entries = Object.entries(changes as Record<string, unknown>);
   if (!entries.length) return null;
   return (
     <ul className="mt-1 space-y-0.5 text-xs text-slate-500">
-      {entries.map(([k, [a, b]]) => (
-        <li key={k}>
-          {k}: <span className="text-rose-600 line-through">{String(a ?? "—")}</span> → <span className="text-emerald-700">{String(b ?? "—")}</span>
-        </li>
-      ))}
+      {entries.map(([k, v]) =>
+        // обычно [было, стало]; одиночное значение (например, «перенесено заказов») — просто показываем
+        Array.isArray(v) ? (
+          <li key={k}>
+            {k}: <span className="text-rose-600 line-through">{String(v[0] ?? "—")}</span> → <span className="text-emerald-700">{String(v[1] ?? "—")}</span>
+          </li>
+        ) : (
+          <li key={k}>
+            {k}: <span className="text-slate-700">{String(v ?? "—")}</span>
+          </li>
+        ),
+      )}
     </ul>
   );
 }

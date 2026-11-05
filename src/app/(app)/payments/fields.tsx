@@ -21,7 +21,7 @@ export function PaymentFormFields({ legal, defaultType = "PARTIAL" }: { legal: {
         <Input name="docNumber" />
       </Field>
       <Field label="Плательщик (наше юрлицо)">
-        <Select name="legalEntityId" placeholder="—" options={legal} />
+        <Select searchable name="legalEntityId" placeholder="—" options={legal} />
       </Field>
       <Field label="Комментарий" className="col-span-2">
         <Textarea name="comment" rows={1} />
