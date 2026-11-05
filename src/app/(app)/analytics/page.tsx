@@ -59,7 +59,7 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
       SELECT u.id, u.name, COALESCE(o2.orders,0)::int orders, COALESCE(o2.amount,0) amount, COALESCE(o2.overdue,0)::int overdue_deliveries,
         (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'DONE' AND t.completed_at BETWEEN ${from}::date AND ${to}::date + 1)::int tasks_done,
         (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.deleted_at IS NULL AND t.status IN ('NEW','IN_PROGRESS','WAITING') AND t.due_date < now())::int tasks_overdue,
-        (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.deleted_at IS NULL AND t.status IN ('NEW','IN_PROGRESS','WAITING'))::int tasks_open
+        (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.deleted_at IS NULL AND t.status IN ('NEW','IN_PROGRESS','WAITING','REVIEW'))::int tasks_open
       FROM users u JOIN roles r ON r.id = u.role_id LEFT JOIN o2 ON o2.buyer_id = u.id
       WHERE u.is_active AND (r.code = 'BUYER' OR o2.orders > 0)
       UNION ALL

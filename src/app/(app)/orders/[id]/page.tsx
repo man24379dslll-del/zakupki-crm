@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
@@ -206,13 +207,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
               <thead>
                 <tr>
                   <Th>Товар</Th>
-                  <Th right>Заказано</Th>
-                  <Th right>Цена</Th>
+                  <Th right>Заказано · цена</Th>
                   <Th right>Сумма</Th>
-                  <Th right>Поставлено</Th>
-                  <Th right>Остаток</Th>
+                  <Th>Поставлено</Th>
                   <Th>Срок</Th>
-                  <Th>Выполнение</Th>
                 </tr>
               </thead>
               <tbody>
@@ -220,8 +218,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                   const p = Number(i.qty) > 0 ? (Number(i.delivered) / Number(i.qty)) * 100 : 0;
                   const rest = Number(i.qty) - Number(i.delivered);
                   return (
-                    <tr key={i.id}>
-                      <Td>
+                    <Fragment key={i.id}>
+                    <tr>
+                      <Td className="min-w-[11rem]">
                         <Link href={`/products/${i.product_id}`} className="font-medium text-slate-900 hover:text-brand-700">
                           {i.product}
                         </Link>
@@ -231,9 +230,34 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                           {rest < 0 && <Badge tone={i.over_delivery_approved ? "amber" : "red"}>сверх заказа +{fmtQty(-rest)}{i.over_delivery_approved ? ", подтверждено" : ""}</Badge>}
                           {i.price === null && <Badge tone="amber">нет цены</Badge>}
                         </div>
-                        {i.note && <div className="mt-0.5 text-xs text-slate-500">{i.note}</div>}
-                        {edit && canEdit && (
-                          <div className="mt-2 rounded-lg bg-slate-50 p-2">
+                        {i.note && <div className="mt-0.5 text-xs leading-snug text-slate-500">{i.note}</div>}
+                      </Td>
+                      <Td right>
+                        <div className="font-medium text-slate-900">{fmtQty(i.qty)}</div>
+                        <div className="text-xs text-slate-500">{i.price === null ? "без цены" : `по ${fmtPrice(i.price)}`}</div>
+                      </Td>
+                      <Td right>{i.price === null ? "—" : fmtMoney(Number(i.qty) * Number(i.price))}</Td>
+                      <Td className="w-40 min-w-[8.5rem]">
+                        <div className="flex items-baseline justify-between gap-2 tabular-nums">
+                          <span className="font-medium text-slate-900">{fmtQty(i.delivered)}</span>
+                          <span className="text-xs text-slate-500">{fmtPct(p)}</span>
+                        </div>
+                        <div className="my-1"><Progress value={p} tone={p >= 100 || i.is_closed ? "green" : "brand"} /></div>
+                        <div className="whitespace-nowrap text-xs text-slate-500">{i.is_closed ? "закрыта" : rest > 0 ? `осталось ${fmtQty(rest)}` : "всё поставлено"}</div>
+                      </Td>
+                      <Td className="whitespace-nowrap">
+                        {i.item_due ? (
+                          <span className="font-medium text-slate-900" title="Свой срок позиции">{fmtDate(i.item_due)}</span>
+                        ) : (
+                          <span className="text-slate-400" title="Общий срок заказа">{fmtDate(i.due_date)}</span>
+                        )}
+                        {!i.is_closed && rest > 0 && i.due_date && i.due_date < today() && <div className="mt-1"><Badge tone="red">просрочено</Badge></div>}
+                      </Td>
+                    </tr>
+                    {edit && canEdit && (
+                      <tr>
+                        <td colSpan={5} className="border-b border-slate-100 px-3 pb-3">
+                          <div className="rounded-lg bg-slate-50 p-2">
                             <ActionForm action={updateItemAction} className="flex flex-wrap items-end gap-2">
                               <input type="hidden" name="itemId" value={i.id} />
                               <Field label="Кол-во">
@@ -259,26 +283,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                               </ConfirmButton>
                             </div>
                           </div>
-                        )}
-                      </Td>
-                      <Td right>{fmtQty(i.qty)}</Td>
-                      <Td right>{fmtPrice(i.price)}</Td>
-                      <Td right>{i.price === null ? "—" : fmtMoney(Number(i.qty) * Number(i.price))}</Td>
-                      <Td right>{fmtQty(i.delivered)}</Td>
-                      <Td right>{i.is_closed ? "0" : fmtQty(Math.max(rest, 0))}</Td>
-                      <Td className="whitespace-nowrap">
-                        {i.item_due ? (
-                          <span className="font-medium text-slate-900" title="Свой срок позиции">{fmtDate(i.item_due)}</span>
-                        ) : (
-                          <span className="text-slate-400" title="Общий срок заказа">{fmtDate(i.due_date)}</span>
-                        )}
-                        {!i.is_closed && rest > 0 && i.due_date && i.due_date < today() && <div><Badge tone="red">просрочено</Badge></div>}
-                      </Td>
-                      <Td className="min-w-28">
-                        <div className="mb-1 text-xs text-slate-500">{fmtPct(p)}</div>
-                        <Progress value={p} tone={p >= 100 || i.is_closed ? "green" : "brand"} />
-                      </Td>
-                    </tr>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>

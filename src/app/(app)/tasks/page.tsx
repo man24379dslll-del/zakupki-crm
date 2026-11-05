@@ -7,6 +7,7 @@ import { PRIORITY_LABEL, TASK_STATUS_LABEL } from "@/lib/format";
 import { Card, Empty, LinkButton, PageHeader } from "@/components/ui";
 import { FilterBar, FSelect, qp, SearchInput, type SP } from "@/components/list";
 import { TaskList, TASK_FROM, TASK_SELECT, type TaskRow } from "./task-list";
+import { sqlList, TASK_ACTIVE, TASK_OPEN } from "@/lib/task-flow";
 
 export const metadata = { title: "Задачи" };
 
@@ -19,10 +20,11 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   if (!all) w.push(sql`(t.assignee_id = ${u.id} OR t.creator_id = ${u.id})`);
   if (who === "me") w.push(sql`t.assignee_id = ${u.id}`);
   else if (who === "byme") w.push(sql`t.creator_id = ${u.id}`);
+  else if (who === "approve") w.push(sql`t.creator_id = ${u.id} AND t.assignee_id <> ${u.id} AND t.status = 'REVIEW'`);
   else if (who && all) w.push(sql`t.assignee_id = ${who}`);
-  const st = qp(sp, "status") || "open";
-  if (st === "open") w.push(sql`t.status IN ('NEW','IN_PROGRESS','WAITING')`);
-  else if (st === "overdue") w.push(sql`t.status IN ('NEW','IN_PROGRESS','WAITING') AND t.due_date < now()`);
+  const st = qp(sp, "status") || (who === "approve" ? "all" : "open");
+  if (st === "open") w.push(sql.raw(`t.status IN (${sqlList(TASK_OPEN)})`));
+  else if (st === "overdue") w.push(sql.raw(`t.status IN (${sqlList(TASK_ACTIVE)}) AND t.due_date < now()`));
   else if (st !== "all") w.push(sql`t.status = ${st}`);
   const due = qp(sp, "due");
   if (due === "today") w.push(sql`t.due_date::date = (now() AT TIME ZONE 'Europe/Moscow')::date`);
@@ -40,12 +42,12 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
       <PageHeader title="Задачи" actions={u.role !== "VIEWER" && <LinkButton href="/tasks/new" variant="primary">+ Задача</LinkButton>} />
       <FilterBar base="/tasks" sp={sp}>
         <SearchInput sp={sp} />
-        <FSelect name="who" sp={sp} placeholder={all ? "Все сотрудники" : "Мои и поставленные мной"} options={[{ value: "me", label: "Мне" }, { value: "byme", label: "Поставленные мной" }, ...(opts ? opt(opts.buyers) : [])]} />
+        <FSelect name="who" sp={sp} placeholder={all ? "Все сотрудники" : "Мои и поставленные мной"} options={[{ value: "me", label: "Мне" }, { value: "byme", label: "Поставленные мной" }, { value: "approve", label: "Ждут моего согласования" }, ...(opts ? opt(opts.buyers) : [])]} />
         <FSelect name="status" sp={sp} placeholder="Открытые" options={[{ value: "overdue", label: "Просроченные" }, { value: "all", label: "Все" }, ...Object.entries(TASK_STATUS_LABEL).map(([v, l]) => ({ value: v, label: l }))]} />
         <FSelect name="due" sp={sp} placeholder="Любой срок" options={[{ value: "today", label: "На сегодня" }, { value: "week", label: "До 7 дней" }]} />
         <FSelect name="priority" sp={sp} placeholder="Любой приоритет" options={Object.entries(PRIORITY_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
       </FilterBar>
-      <Card pad={false}>{rows.length ? <TaskList rows={rows} showAssignee={all} canChange={u.role !== "VIEWER"} /> : <Empty>Задач нет</Empty>}</Card>
+      <Card pad={false}>{rows.length ? <TaskList rows={rows} showAssignee={all || who === "byme" || who === "approve"} me={u.role === "VIEWER" ? null : { id: u.id, canAssign: can(u, PERMS.tasksAssign) }} /> : <Empty>Задач нет</Empty>}</Card>
     </>
   );
 }

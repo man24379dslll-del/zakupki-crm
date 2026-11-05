@@ -11,7 +11,7 @@ export async function ensureTaskReminders(userId: string) {
   await db.execute(sql`
     WITH due AS (
       UPDATE tasks SET reminded_at = now()
-      WHERE assignee_id = ${userId} AND deleted_at IS NULL AND status NOT IN ('DONE','CANCELLED')
+      WHERE assignee_id = ${userId} AND deleted_at IS NULL AND status IN ('NEW','IN_PROGRESS','WAITING')
         AND due_date IS NOT NULL AND due_date < now() + interval '24 hours' AND reminded_at IS NULL
       RETURNING id, title, due_date
     )

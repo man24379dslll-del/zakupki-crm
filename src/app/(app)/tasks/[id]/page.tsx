@@ -7,7 +7,8 @@ import { can, PERMS } from "@/lib/permissions";
 import { opt, selectOptions } from "@/lib/services/refs";
 import { fmtDateTime, orderNo, PRIORITY_LABEL, PRIORITY_TONE, TASK_STATUS_LABEL, TASK_STATUS_TONE } from "@/lib/format";
 import { Alert, Badge, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
-import { ActionForm, SubmitButton } from "@/components/client";
+import { ActionForm, SubmitButton, TaskStepButtons } from "@/components/client";
+import { TASK_ACTIVE, taskSteps, type TaskStatus } from "@/lib/task-flow";
 import { DocumentsBlock, HistoryBlock } from "@/components/blocks";
 import { addTaskCommentAction, setTaskStatusAction, updateTaskAction } from "../actions";
 
@@ -17,14 +18,29 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const u = await requireUser();
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
-  const res = await db.execute(sql`SELECT t.*, a.name AS assignee, c.name AS creator, s.name AS supplier, o.number AS order_number
+  const res = await db.execute(sql`SELECT t.*, a.name AS assignee, c.name AS creator, (c.is_active AND c.deleted_at IS NULL) AS creator_active, s.name AS supplier, o.number AS order_number
     FROM tasks t JOIN users a ON a.id = t.assignee_id JOIN users c ON c.id = t.creator_id LEFT JOIN suppliers s ON s.id = t.supplier_id LEFT JOIN purchase_orders o ON o.id = t.order_id
     WHERE t.id = ${id} AND t.deleted_at IS NULL`);
-  const t = res.rows[0] as Record<string, string | null> | undefined;
+  const t = res.rows[0] as (Record<string, string | null> & { creator_active: boolean }) | undefined;
   if (!t) notFound();
   if (t.assignee_id !== u.id && t.creator_id !== u.id && !can(u, PERMS.tasksViewAll)) return <Alert tone="red">Нет доступа к этой задаче</Alert>;
   const comments = await db.select({ c: schema.taskComments, who: schema.users.name }).from(schema.taskComments).innerJoin(schema.users, eq(schema.users.id, schema.taskComments.authorId)).where(eq(schema.taskComments.taskId, id)).orderBy(asc(schema.taskComments.createdAt));
-  const overdue = t.due_date && !["DONE", "CANCELLED"].includes(t.status!) && new Date(t.due_date) < new Date();
+  const status = t.status as TaskStatus;
+  const overdue = t.due_date && TASK_ACTIVE.includes(status) && new Date(t.due_date) < new Date();
+  const steps = u.role === "VIEWER" ? [] : taskSteps({ status, assigneeId: t.assignee_id!, creatorId: t.creator_id!, creatorActive: t.creator_active }, { id: u.id, canAssign: can(u, PERMS.tasksAssign) });
+  const isAssignee = t.assignee_id === u.id;
+  const self = t.assignee_id === t.creator_id;
+  // подсказка, чей сейчас ход
+  const hint =
+    status === "NEW" ? (isAssignee ? "Задача ждёт вас: нажмите «Взять в работу», чтобы постановщик видел, что вы начали." : `Исполнитель ${t.assignee} ещё не взял задачу в работу.`)
+    : status === "REVIEW" ? (isAssignee ? `Отправлено на согласование. Ждём решения: ${t.creator}.` : steps.includes("approve") ? "Исполнитель сдал задачу. Проверьте и согласуйте или верните на доработку с причиной." : `Ждёт согласования: ${t.creator}.`)
+    : (status === "IN_PROGRESS" || status === "WAITING") && isAssignee && !self ? "Когда закончите — «Отправить на согласование». Задачу закроет постановщик." : null;
+  const timeline: [string, string | null][] = [
+    ["Поставлена", t.created_at],
+    ["Взята в работу", t.started_at],
+    ...(self ? [] : ([["Отправлена на согласование", t.submitted_at]] as [string, string | null][])),
+    [self ? "Выполнена" : "Согласована", status === "DONE" ? t.completed_at : null],
+  ];
   const canEdit = t.creator_id === u.id || can(u, PERMS.tasksAssign);
   const opts = canEdit ? await selectOptions() : null;
   const due = t.due_date ? new Date(t.due_date) : null;
@@ -33,7 +49,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
     <>
       <PageHeader
         back={{ href: "/tasks", label: "Задачи" }}
-        title={<span className="flex flex-wrap items-center gap-2">{t.title} <Badge tone={TASK_STATUS_TONE[t.status!]}>{TASK_STATUS_LABEL[t.status!]}</Badge>{overdue && <Badge tone="red">просрочена</Badge>}</span>}
+        title={<span className="flex flex-wrap items-center gap-2">{t.title} <Badge tone={TASK_STATUS_TONE[status]}>{TASK_STATUS_LABEL[status]}</Badge>{overdue && <Badge tone="red">просрочена</Badge>}</span>}
         subtitle={`Исполнитель: ${t.assignee} · Поставил: ${t.creator} · ${fmtDateTime(t.created_at)}`}
       />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -46,15 +62,10 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
               {t.supplier_id && <Link className="text-brand-700 hover:underline" href={`/suppliers/${t.supplier_id}`}>{t.supplier}</Link>}
               {t.order_id && <Link className="text-brand-700 hover:underline" href={`/orders/${t.order_id}`}>Заказ {orderNo(Number(t.order_number))}</Link>}
             </div>
-            {u.role !== "VIEWER" && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {Object.entries(TASK_STATUS_LABEL).filter(([k]) => k !== t.status).map(([k, l]) => (
-                  <ActionForm key={k} action={setTaskStatusAction}>
-                    <input type="hidden" name="id" value={id} />
-                    <input type="hidden" name="status" value={k} />
-                    <SubmitButton size="sm" variant={k === "DONE" ? "primary" : "secondary"}>{l}</SubmitButton>
-                  </ActionForm>
-                ))}
+            {(hint || steps.length > 0) && (
+              <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
+                {hint && <p className="text-sm text-slate-600">{hint}</p>}
+                <TaskStepButtons action={setTaskStatusAction} taskId={id} steps={steps} />
               </div>
             )}
           </Card>
@@ -75,6 +86,18 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           </Card>
         </div>
         <div className="space-y-4">
+          <Card title="Ход задачи">
+            <ol className="space-y-1.5 text-sm">
+              {timeline.map(([l, at]) => (
+                <li key={l} className="flex items-center gap-2">
+                  <span className={at ? "text-emerald-600" : "text-slate-300"}>{at ? "●" : "○"}</span>
+                  <span className={at ? "text-slate-800" : "text-slate-400"}>{l}</span>
+                  <span className="ml-auto text-xs text-slate-500">{at ? fmtDateTime(at) : ""}</span>
+                </li>
+              ))}
+              {status === "CANCELLED" && <li className="text-sm text-slate-500">Задача отменена</li>}
+            </ol>
+          </Card>
           {canEdit && opts && (
             <Card title="Изменить задачу">
               <ActionForm action={updateTaskAction} className="space-y-3">

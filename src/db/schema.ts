@@ -36,7 +36,8 @@ export const paymentMethod = pgEnum("payment_method", ["BANK", "CASH"]);
 /// как платим по заказу: безнал, наличные или комплексно (часть нал, часть безнал)
 export const orderPayMethod = pgEnum("order_pay_method", ["BANK", "CASH", "MIXED"]);
 export const taskPriority = pgEnum("task_priority", ["LOW", "NORMAL", "HIGH", "URGENT"]);
-export const taskStatus = pgEnum("task_status", ["NEW", "IN_PROGRESS", "WAITING", "DONE", "CANCELLED"]);
+/// REVIEW — исполнитель сдал задачу, ждёт согласования постановщика
+export const taskStatus = pgEnum("task_status", ["NEW", "IN_PROGRESS", "WAITING", "REVIEW", "DONE", "CANCELLED"]);
 
 // ---------- пользователи и доступ ----------
 export const roles = pgTable("roles", {
@@ -320,6 +321,10 @@ export const tasks = pgTable(
     status: taskStatus("status").notNull().default("NEW"),
     supplierId: uuid("supplier_id").references(() => suppliers.id),
     orderId: uuid("order_id").references(() => purchaseOrders.id),
+    /// когда исполнитель взял в работу (первый раз)
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    /// когда последний раз отправил на согласование
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     remindedAt: timestamp("reminded_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

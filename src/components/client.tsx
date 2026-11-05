@@ -4,6 +4,7 @@ import { useFormStatus } from "react-dom";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { btnClass, cn, type BtnVariant } from "./ui";
 import { Combobox } from "./combobox";
+import { TASK_STEPS, type TaskStep } from "@/lib/task-flow";
 
 export type ActionResult = { error?: string; ok?: string; needConfirm?: string } | undefined | void;
 export type FormAction = (prev: ActionResult, fd: FormData) => Promise<ActionResult>;
@@ -268,5 +269,48 @@ export function OrderPayFields({ method, cash, className }: { method?: string | 
         </label>
       )}
     </div>
+  );
+}
+
+/**
+ * Кнопки хода задачи («Взять в работу», «Отправить на согласование», «Согласовать» …).
+ * Шаги с комментарием открывают поле (причина возврата — обязательна), «Отменить» — спрашивает подтверждение.
+ * compact — в списках: только главная кнопка, без комментария.
+ */
+export function TaskStepButtons({ action, taskId, steps, compact }: { action: FormAction; taskId: string; steps: TaskStep[]; compact?: boolean }) {
+  const [open, setOpen] = useState<TaskStep | null>(null);
+  const shown = compact ? steps.filter((s) => TASK_STEPS[s].tone === "primary").slice(0, 1) : steps;
+  if (!shown.length) return null;
+  const cur = open ? TASK_STEPS[open] : null;
+  return (
+    <ActionForm action={action} className={compact ? "" : "space-y-2"}>
+      <input type="hidden" name="id" value={taskId} />
+      {open && cur ? (
+        <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          <input type="hidden" name="step" value={open} />
+          {cur.comment ? (
+            <textarea name="comment" rows={2} required={cur.comment === "required"} placeholder={cur.placeholder} autoFocus className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
+          ) : (
+            <div className="text-sm text-slate-700">{cur.label}?</div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <SubmitButton size="sm" variant={cur.tone === "danger" ? "danger" : "primary"}>{cur.comment ? cur.label : "Да"}</SubmitButton>
+            <button type="button" className={btnClass("ghost", "sm")} onClick={() => setOpen(null)}>Назад</button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {shown.map((s) => {
+            const st = TASK_STEPS[s];
+            const ask = !compact && (st.comment || s === "cancel");
+            return ask ? (
+              <button key={s} type="button" className={btnClass(st.tone, "sm")} onClick={() => setOpen(s)}>{st.label}</button>
+            ) : (
+              <SubmitButton key={s} size="sm" variant={st.tone} name="step" value={s}>{st.label}</SubmitButton>
+            );
+          })}
+        </div>
+      )}
+    </ActionForm>
   );
 }

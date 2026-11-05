@@ -50,6 +50,13 @@
       "when": 1793889655502,
       "tag": "0006_user_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793890388347,
+      "tag": "0007_task_review",
+      "breakpoints": true
     }
   ]
 }

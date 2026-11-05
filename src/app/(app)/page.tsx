@@ -8,6 +8,7 @@ import { addDays, fmtDate, fmtDateTime, fmtMoney, fmtQty, orderNo, today } from 
 import { Badge, Card, Empty, LinkButton, Progress, Stat } from "@/components/ui";
 import { ChangesView } from "@/components/blocks";
 import { TaskList, TASK_FROM, TASK_SELECT, type TaskRow } from "./tasks/task-list";
+import { sqlList, TASK_ACTIVE } from "@/lib/task-flow";
 
 export const metadata = { title: "Главная" };
 
@@ -17,7 +18,7 @@ export default async function Home() {
   const all = can(u, PERMS.ordersViewAll);
   const monthStart = d.slice(0, 8) + "01";
 
-  const [kpi, deliveries, tasks, stats, activity] = await Promise.all([
+  const [kpi, deliveries, tasks, stats, activity, approvals] = await Promise.all([
     db.execute(sql`
       WITH ${ORDER_STATS}
       SELECT
@@ -37,7 +38,7 @@ export default async function Home() {
         AND (os.next_due IS NULL OR os.next_due <= ${addDays(d, 7)}::date)
       ORDER BY overdue DESC, os.next_due NULLS LAST LIMIT 12`),
     db.execute(sql`SELECT ${sql.raw(TASK_SELECT)} FROM ${sql.raw(TASK_FROM)}
-      WHERE t.deleted_at IS NULL AND t.assignee_id = ${u.id} AND t.status IN ('NEW','IN_PROGRESS','WAITING')
+      WHERE t.deleted_at IS NULL AND t.assignee_id = ${u.id} AND ${sql.raw(`t.status IN (${sqlList(TASK_ACTIVE)})`)}
       ORDER BY overdue DESC, t.due_date NULLS LAST LIMIT 20`),
     db.execute(sql`
       WITH ${ORDER_STATS}
@@ -46,10 +47,15 @@ export default async function Home() {
         (SELECT COALESCE(SUM(os.amount),0) FROM purchase_orders o JOIN order_stats os ON os.order_id = o.id WHERE o.deleted_at IS NULL AND o.status <> 'CANCELLED' AND o.order_date >= ${monthStart}::date AND ${all ? sql`TRUE` : sql`o.buyer_id = ${u.id}`}) AS amount,
         (SELECT COUNT(*) FROM deliveries dl JOIN purchase_orders o ON o.id = dl.order_id WHERE dl.deleted_at IS NULL AND dl.date >= ${monthStart}::date AND ${all ? sql`TRUE` : sql`o.buyer_id = ${u.id}`})::int AS deliveries,
         (SELECT COUNT(*) FROM tasks t WHERE t.status = 'DONE' AND t.completed_at >= ${monthStart}::date AND ${all ? sql`TRUE` : sql`t.assignee_id = ${u.id}`})::int AS tasks_done,
-        (SELECT COUNT(*) FROM tasks t WHERE t.deleted_at IS NULL AND t.status IN ('NEW','IN_PROGRESS','WAITING') AND t.due_date < now() AND ${all ? sql`TRUE` : sql`t.assignee_id = ${u.id}`})::int AS tasks_overdue`),
+        (SELECT COUNT(*) FROM tasks t WHERE t.deleted_at IS NULL AND ${sql.raw(`t.status IN (${sqlList(TASK_ACTIVE)})`)} AND t.due_date < now() AND ${all ? sql`TRUE` : sql`t.assignee_id = ${u.id}`})::int AS tasks_overdue`),
     db.execute(sql`SELECT l.created_at, l.summary, l.entity_type, l.entity_id, l.changes, us.name AS who FROM activity_logs l LEFT JOIN users us ON us.id = l.user_id
       WHERE l.action <> 'login' AND ${all ? sql`TRUE` : sql`l.user_id = ${u.id}`} ORDER BY l.created_at DESC LIMIT 10`),
+    // сотрудники сдали мои задачи — нужно согласовать или вернуть
+    db.execute(sql`SELECT ${sql.raw(TASK_SELECT)} FROM ${sql.raw(TASK_FROM)}
+      WHERE t.deleted_at IS NULL AND t.creator_id = ${u.id} AND t.assignee_id <> ${u.id} AND t.status = 'REVIEW' ORDER BY t.submitted_at LIMIT 20`),
   ]);
+  const ap = approvals.rows as unknown as TaskRow[];
+  const me = u.role === "VIEWER" ? null : { id: u.id, canAssign: can(u, PERMS.tasksAssign) };
   const k = kpi.rows[0] as { overdue: number; expected: number; week: number; active: number; debt: string | null };
   const dl = deliveries.rows as { id: string; number: number; planned_delivery_date: string | null; supplier: string; qty: string; delivered: string; remaining: string; overdue: boolean; products: string }[];
   const tk = tasks.rows as unknown as TaskRow[];
@@ -79,17 +85,27 @@ export default async function Home() {
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Просроченные поставки" value={k.overdue} href="/deliveries?tab=expected&when=overdue" tone={k.overdue > 0 ? "red" : undefined} sub="план. дата прошла, товар не пришёл" />
         <Stat label="Ожидаемые поставки" value={k.expected} href="/deliveries?tab=expected" sub={`на ближайшие 7 дней: ${k.week}`} />
-        <Stat label="Задачи на сегодня" value={todayTasks.length} href="/tasks?who=me&due=today" tone={tk.some((t) => t.overdue) ? "red" : undefined} sub={`${tk.filter((t) => t.overdue).length} просрочено · всего открыто ${tk.length}`} />
+        <Stat label="Задачи на сегодня" value={todayTasks.length} href="/tasks?who=me&due=today" tone={tk.some((t) => t.overdue) ? "red" : undefined} sub={`${tk.filter((t) => t.overdue).length} просрочено · не взято в работу ${tk.filter((t) => t.status === "NEW").length}${ap.length ? ` · ждут согласования ${ap.length}` : ""}`} />
         <Stat label="Активные заказы" value={k.active} href="/orders?status=active" sub={`долг по отгрузке ${fmtMoney(k.debt ?? 0)}`} />
       </div>
 
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
         <Card title="Сегодня" actions={u.role !== "VIEWER" && <Link href="/tasks/new" className="text-xs font-medium text-brand-700">+ задача</Link>} pad={false}>
-          {todayTasks.length === 0 ? <Empty>На сегодня задач нет 👍</Empty> : <TaskList rows={todayTasks} canChange={u.role !== "VIEWER"} />}
+          {ap.length > 0 && (
+            <>
+              <div className="flex items-center justify-between border-b border-slate-100 bg-cyan-50 px-4 py-1.5 text-xs font-medium text-cyan-900">
+                <span>Ждут вашего согласования: {ap.length}</span>
+                <Link href="/tasks?who=approve" className="hover:underline">все →</Link>
+              </div>
+              <TaskList rows={ap.slice(0, 6)} showAssignee me={me} />
+              <div className="border-y border-slate-100 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500">Мои задачи на сегодня</div>
+            </>
+          )}
+          {todayTasks.length === 0 ? <Empty>На сегодня задач нет 👍</Empty> : <TaskList rows={todayTasks} me={me} />}
           {otherTasks.length > 0 && (
             <>
               <div className="border-t border-slate-100 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500">Остальные открытые</div>
-              <TaskList rows={otherTasks.slice(0, 6)} canChange={u.role !== "VIEWER"} />
+              <TaskList rows={otherTasks.slice(0, 6)} me={me} />
             </>
           )}
         </Card>

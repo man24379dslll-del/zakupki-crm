@@ -77,8 +77,8 @@ export const ORDER_STATUS_TONE: Record<string, string> = {
   DELIVERED: "green",
   CANCELLED: "red",
 };
-export const TASK_STATUS_LABEL: Record<string, string> = { NEW: "Новая", IN_PROGRESS: "В работе", WAITING: "Ожидает ответа", DONE: "Выполнена", CANCELLED: "Отменена" };
-export const TASK_STATUS_TONE: Record<string, string> = { NEW: "blue", IN_PROGRESS: "violet", WAITING: "amber", DONE: "green", CANCELLED: "gray" };
+export const TASK_STATUS_LABEL: Record<string, string> = { NEW: "Новая", IN_PROGRESS: "В работе", WAITING: "Ожидает ответа", REVIEW: "На согласовании", DONE: "Выполнена", CANCELLED: "Отменена" };
+export const TASK_STATUS_TONE: Record<string, string> = { NEW: "blue", IN_PROGRESS: "violet", WAITING: "amber", REVIEW: "cyan", DONE: "green", CANCELLED: "gray" };
 export const PRIORITY_LABEL: Record<string, string> = { LOW: "Низкий", NORMAL: "Обычный", HIGH: "Высокий", URGENT: "Срочный" };
 export const PRIORITY_TONE: Record<string, string> = { LOW: "gray", NORMAL: "blue", HIGH: "amber", URGENT: "red" };
 export const PAYMENT_TYPE_LABEL: Record<string, string> = { ADVANCE: "Аванс", PARTIAL: "Частичная", FULL: "Полная" };

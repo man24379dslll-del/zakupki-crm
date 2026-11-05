@@ -19,7 +19,8 @@ async function counters(u: SessionUser) {
     WITH ${ORDER_STATS}
     SELECT
       (SELECT COUNT(*) FROM purchase_orders o LEFT JOIN order_stats os ON os.order_id = o.id WHERE o.deleted_at IS NULL AND ${orderScope(u)} AND ${OVERDUE_SQL(d)})::int AS overdue,
-      (SELECT COUNT(*) FROM tasks WHERE assignee_id = ${u.id} AND deleted_at IS NULL AND status IN ('NEW','IN_PROGRESS','WAITING'))::int AS tasks,
+      -- мои задачи в работе + сданные мне на согласование
+      (SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL AND ((assignee_id = ${u.id} AND status IN ('NEW','IN_PROGRESS','WAITING')) OR (creator_id = ${u.id} AND assignee_id <> ${u.id} AND status = 'REVIEW')))::int AS tasks,
       (SELECT COUNT(*) FROM notifications WHERE user_id = ${u.id} AND read_at IS NULL)::int AS notif`);
   return res.rows[0] as { overdue: number; tasks: number; notif: number };
 }
