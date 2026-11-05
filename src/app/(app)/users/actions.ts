@@ -22,7 +22,7 @@ export async function createUserAction(_: ActionResult, fd: FormData): Promise<A
     const roleCode = (fstr(fd.get("role")) ?? "BUYER") as "BUYER";
     const [role] = await db.select().from(schema.roles).where(eq(schema.roles.code, roleCode));
     const [ex] = await db.select().from(schema.users).where(eq(schema.users.login, login));
-    if (ex) throw new UserError("Такой логин уже занят");
+    if (ex) throw new UserError(ex.deletedAt ? `Логин занят удалённым сотрудником ${ex.name} — восстановите его в Настройки → Удалённые или выберите другой логин` : "Такой логин уже занят");
     const password = fstr(fd.get("password")) ?? genPassword();
     if (password.length < 8) throw new UserError("Пароль — не короче 8 символов");
     const extra = fd.getAll("perm").map(String).filter((p) => GRANTABLE.includes(p as Perm));
@@ -77,10 +77,28 @@ export async function toggleBlockAction(_: ActionResult, fd: FormData): Promise<
     const id = String(fd.get("id"));
     if (id === u.id) throw new UserError("Нельзя заблокировать себя");
     const [t] = await db.select().from(schema.users).where(eq(schema.users.id, id));
+    if (!t || t.deletedAt) throw new UserError("Пользователь не найден");
     await db.update(schema.users).set({ isActive: !t.isActive }).where(eq(schema.users.id, id));
     if (t.isActive) await db.delete(schema.sessions).where(eq(schema.sessions.userId, id)); // завершить все сеансы
     await logActivity(db, { userId: u.id, action: "update", entityType: "user", entityId: id, summary: `${t.isActive ? "Заблокирован" : "Разблокирован"} пользователь ${t.name}` });
     revalidatePath("/users");
+  });
+}
+
+/** Удалить можно только заблокированного: он пропадает из списка, но его имя остаётся в заказах, задачах и истории */
+export async function deleteUserAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return safe(async () => {
+    const u = await requirePerm(PERMS.usersManage);
+    const id = String(fd.get("id"));
+    if (id === u.id) throw new UserError("Нельзя удалить себя");
+    const [t] = await db.select().from(schema.users).where(eq(schema.users.id, id));
+    if (!t || t.deletedAt) throw new UserError("Пользователь не найден");
+    if (t.isActive) throw new UserError("Сначала заблокируйте сотрудника, потом удалите");
+    await db.update(schema.users).set({ deletedAt: new Date() }).where(eq(schema.users.id, id));
+    await db.delete(schema.sessions).where(eq(schema.sessions.userId, id));
+    await logActivity(db, { userId: u.id, action: "delete", entityType: "user", entityId: id, summary: `Удалён пользователь ${t.name} (логин ${t.login})` });
+    revalidatePath("/users");
+    return { ok: `${t.name} удалён. Восстановить можно в Настройки → Удалённые` };
   });
 }
 

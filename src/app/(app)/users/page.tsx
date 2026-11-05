@@ -8,7 +8,7 @@ const ALL_PERMS = Object.values(PERMS);
 import { fmtDateTime, ROLE_LABEL } from "@/lib/format";
 import { Badge, Card, Field, Input, PageHeader, Select } from "@/components/ui";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/client";
-import { createUserAction, resetPasswordAction, toggleBlockAction, updateUserAction } from "./actions";
+import { createUserAction, deleteUserAction, resetPasswordAction, toggleBlockAction, updateUserAction } from "./actions";
 
 export const metadata = { title: "Пользователи" };
 
@@ -52,7 +52,7 @@ export default async function UsersPage() {
   const res = await db.execute(sql`SELECT u.*, r.code AS role, r.permissions AS role_perms,
       (SELECT COUNT(*) FROM purchase_orders o WHERE o.buyer_id = u.id AND o.deleted_at IS NULL)::int AS orders,
       (SELECT string_agg(s.name, ', ') FROM supplier_buyers sb JOIN suppliers s ON s.id = sb.supplier_id WHERE sb.user_id = u.id) AS suppliers
-    FROM users u JOIN roles r ON r.id = u.role_id ORDER BY u.is_active DESC, r.code, u.name`);
+    FROM users u JOIN roles r ON r.id = u.role_id WHERE u.deleted_at IS NULL ORDER BY u.is_active DESC, r.code, u.name`);
   const users = res.rows as { id: string; login: string; name: string; email: string | null; phone: string | null; position: string | null; role: string; role_perms: string[]; extra_permissions: string[]; revoked_permissions: string[]; is_active: boolean; last_login_at: string | null; orders: number; suppliers: string | null }[];
   return (
     <>
@@ -90,6 +90,11 @@ export default async function UsersPage() {
                     <ConfirmButton action={toggleBlockAction} question={u.is_active ? "Заблокировать и завершить сеансы?" : "Разблокировать?"} variant={u.is_active ? "danger" : "secondary"} hidden={{ id: u.id }}>
                       {u.is_active ? "Заблокировать" : "Разблокировать"}
                     </ConfirmButton>
+                    {!u.is_active && (
+                      <ConfirmButton action={deleteUserAction} question={`Удалить ${u.name} из списка? Заказы, задачи и история останутся, имя в них будет видно. Восстановить можно в Настройки → Удалённые.`} variant="danger" hidden={{ id: u.id }}>
+                        Удалить
+                      </ConfirmButton>
+                    )}
                   </>
                 )}
               </span>

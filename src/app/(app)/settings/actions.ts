@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requirePerm } from "@/lib/auth";
-import { PERMS } from "@/lib/permissions";
+import { can, PERMS } from "@/lib/permissions";
 import { diff, logActivity } from "@/lib/audit";
 import { normKey } from "@/lib/normalize";
 import { fnum, fstr, safe, UserError } from "@/lib/forms";
@@ -133,8 +133,9 @@ export async function restoreRecordAction(_: ActionResult, fd: FormData): Promis
     const u = await requirePerm(PERMS.deleteRecords);
     const type = String(fd.get("type"));
     const id = String(fd.get("id"));
-    const t = { order: schema.purchaseOrders, supplier: schema.suppliers, delivery: schema.deliveries, payment: schema.payments }[type];
+    const t = { order: schema.purchaseOrders, supplier: schema.suppliers, delivery: schema.deliveries, payment: schema.payments, user: schema.users }[type];
     if (!t) throw new UserError("Неверный тип");
+    if (type === "user" && !can(u, PERMS.usersManage)) throw new UserError("Восстановить сотрудника может тот, у кого есть право «Управлять пользователями»");
     await db.update(t).set({ deletedAt: null } as never).where(eq(t.id, id));
     if (type === "delivery") {
       const [d] = await db.select().from(schema.deliveries).where(eq(schema.deliveries.id, id));
@@ -143,7 +144,8 @@ export async function restoreRecordAction(_: ActionResult, fd: FormData): Promis
     }
     await logActivity(db, { userId: u.id, action: "restore", entityType: type, entityId: id, summary: "Запись восстановлена из удалённых" });
     revalidatePath("/settings");
-    return { ok: "Восстановлено" };
+    if (type === "user") revalidatePath("/users");
+    return { ok: type === "user" ? "Сотрудник восстановлен — он заблокирован, разблокируйте его в разделе «Пользователи»" : "Восстановлено" };
   });
 }
 

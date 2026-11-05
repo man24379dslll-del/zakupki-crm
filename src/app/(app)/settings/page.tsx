@@ -143,6 +143,7 @@ async function DeletedTab() {
     UNION ALL SELECT 'supplier', id, deleted_at, 'Поставщик ' || name FROM suppliers WHERE deleted_at IS NOT NULL
     UNION ALL SELECT 'delivery', d.id, d.deleted_at, 'Поставка от ' || to_char(d.date, 'DD.MM.YYYY') || ' по заказу З-' || lpad(o.number::text, 5, '0') FROM deliveries d JOIN purchase_orders o ON o.id = d.order_id WHERE d.deleted_at IS NOT NULL
     UNION ALL SELECT 'payment', p.id, p.deleted_at, 'Оплата ' || p.amount || ' ₽ от ' || COALESCE(to_char(p.date, 'DD.MM.YYYY'), '—') FROM payments p WHERE p.deleted_at IS NOT NULL
+    UNION ALL SELECT 'user', id, deleted_at, 'Сотрудник ' || name || ' (логин ' || login || ') — восстановится заблокированным' FROM users WHERE deleted_at IS NOT NULL
     ORDER BY 3 DESC LIMIT 200`);
   const rows = res.rows as { type: string; id: string; deleted_at: string; label: string }[];
   return (

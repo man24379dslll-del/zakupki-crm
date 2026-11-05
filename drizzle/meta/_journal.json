@@ -43,6 +43,13 @@
       "when": 1793887828320,
       "tag": "0005_order_payment_and_revoked_perms",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793889655502,
+      "tag": "0006_user_soft_delete",
+      "breakpoints": true
     }
   ]
 }

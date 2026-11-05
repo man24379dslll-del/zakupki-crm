@@ -60,6 +60,8 @@ export const users = pgTable("users", {
   /// права роли, которые у этого сотрудника сняты (можно ограничить и руководителя)
   revokedPermissions: text("revoked_permissions").array().notNull().default(sql`'{}'::text[]`),
   isActive: boolean("is_active").notNull().default(true),
+  /// удалён из списка сотрудников (только заблокированный); имя остаётся в заказах и истории, восстановление — Настройки → Удалённые
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
   createdAt: created(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
