@@ -9,7 +9,7 @@ import { opt, selectOptions } from "@/lib/services/refs";
 import { orderFilters, orderSort } from "@/lib/services/order-filters";
 import { fmtDate, fmtMoney, fmtQty, ORDER_PAY_LABEL, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo } from "@/lib/format";
 import { Badge, Card, Empty, LinkButton, PageHeader, Progress, Table, Td, Th } from "@/components/ui";
-import { ExportLink, FDate, FilterBar, FSelect, pageParams, Pagination, SavedViews, SearchInput, SortTh, type SP } from "@/components/list";
+import { ExportLink, FDate, FilterBar, FSelect, pageParams, Pagination, qp, SavedViews, SearchInput, SortTh, type SP } from "@/components/list";
 import { SaveViewButton } from "@/components/client";
 import { saveViewAction } from "@/app/actions/common";
 
@@ -47,8 +47,9 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <SavedViews views={views} base={base} />
       <FilterBar base={base} sp={sp}>
         <SearchInput sp={sp} placeholder="№ заказа, счёт, товар, поставщик" />
-        <FSelect name="status" sp={sp} placeholder="Все статусы" options={[{ value: "active", label: "Активные" }, { value: "overdue", label: "Просроченные" }, ...Object.entries(ORDER_STATUS_LABEL).map(([v, l]) => ({ value: v, label: l }))]} />
+        <FSelect name="status" sp={sp} placeholder="Все статусы" options={[{ value: "active", label: "Активные" }, { value: "expected", label: "Ждём поставку (недопоставка)" }, { value: "overdue", label: "Просроченные" }, ...Object.entries(ORDER_STATUS_LABEL).map(([v, l]) => ({ value: v, label: l }))]} />
         <FSelect searchable name="supplier" sp={sp} placeholder="Все поставщики" options={opt(opts.suppliers)} />
+        {qp(sp, "product") && <FSelect searchable name="product" sp={sp} placeholder="Все товары" options={opt(opts.products)} />}
         {all && <FSelect searchable name="buyer" sp={sp} placeholder="Все закупщики" options={[{ value: "none", label: "Не назначен" }, ...opt(opts.buyers)]} />}
         <FSelect searchable name="legal" sp={sp} placeholder="Все юрлица" options={opt(opts.legal)} />
         <FSelect searchable name="direction" sp={sp} placeholder="Все направления" options={opt(opts.directions)} />
@@ -73,15 +74,16 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <Th>Товары</Th>
                 {all && <Th>Закупщик</Th>}
                 <SortTh label="Сумма" field="amount" base={base} sp={sp} right />
-                <Th>Поставлено</Th>
-                <SortTh label="Долг по заказу" field="debt" base={base} sp={sp} right />
+                <SortTh label="Поставлено" field="delivered" base={base} sp={sp} />
+                <SortTh label={qp(sp, "sort") === "debt_ship" ? "Долг по отгрузке" : "Долг по заказу"} field={qp(sp, "sort") === "debt_ship" ? "debt_ship" : "debt"} base={base} sp={sp} right />
                 <Th>Статус</Th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => {
                 const pct = Number(r.qty) > 0 ? (Number(r.delivered) / Number(r.qty)) * 100 : 0;
-                const debt = Number(r.amount) - Number(r.paid);
+                // «Долг по отгрузке» из аналитики: поставлено − оплачено, иначе долг по заказу
+                const debt = qp(sp, "sort") === "debt_ship" ? Number(r.delivered_amount) - Number(r.paid) : Number(r.amount) - Number(r.paid);
                 return (
                   <tr key={r.id}>
                     <Td>
@@ -104,6 +106,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                         {fmtQty(r.delivered)} / {fmtQty(r.qty)}
                       </div>
                       <Progress value={pct} tone={pct >= 100 ? "green" : r.overdue ? "red" : "brand"} />
+                      {qp(sp, "sort") === "delivered" && <div className="mt-1 text-xs tabular-nums text-slate-500">{fmtMoney(r.delivered_amount)}</div>}
                     </Td>
                     <Td right className={debt > 0 ? "text-slate-900" : "text-emerald-700"}>
                       {fmtMoney(debt)}

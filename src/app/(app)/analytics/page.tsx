@@ -29,6 +29,11 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
   if (product) f.push(sql`EXISTS (SELECT 1 FROM purchase_order_items x WHERE x.order_id = o.id AND x.product_id = ${product})`);
   const W = sql.join(f, sql` AND `);
   const opts = await selectOptions();
+  // плитки ведут в список заказов с теми же фильтрами (период, поставщик, товар, закупщик)
+  const ordersLink = (extra: Record<string, string> = {}) => {
+    const qs = new URLSearchParams({ from, to, ...(sup ? { supplier: sup } : {}), ...(buyer ? { buyer } : {}), ...(product ? { product } : {}), ...extra });
+    return `/orders?${qs}`;
+  };
 
   const [kpiR, monthR, buyersR, suppliersR] = await Promise.all([
     db.execute(sql`WITH ${ORDER_STATS}
@@ -108,19 +113,20 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
         <FSelect searchable name="buyer" sp={sp} placeholder="Все закупщики" options={[{ value: "none", label: "Не назначен" }, ...opt(opts.buyers)]} />
       </FilterBar>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Заказов" value={k.orders} />
-        <Stat label="Сумма заказов" value={fmtMoney(k.amount)} />
-        <Stat label="Сумма фактических поставок" value={fmtMoney(k.delivered)} sub={Number(k.amount) ? `${fmtPct((Number(k.delivered) / Number(k.amount)) * 100)} от заказанного` : undefined} />
-        <Stat label="Ожидаемые поставки" value={k.expected} sub="заказов с недопоставкой" />
-        <Stat label="Просроченные поставки" value={k.overdue} tone={Number(k.overdue) > 0 ? "red" : undefined} href="/deliveries?tab=expected&when=overdue" />
-        <Stat label="Долг по отгрузке" value={fmtMoney(k.debt_ship)} sub={`по заказам: ${fmtMoney(k.debt_order)}`} tone={Number(k.debt_ship) > 0 ? "amber" : undefined} />
-        <Stat label="Активных поставщиков" value={k.active_suppliers} sub="заказы за 3 мес. или в работе" />
-        <Stat label="Активных закупщиков" value={k.active_buyers} sub="оформляли заказы за 3 мес." />
+        <Stat label="Заказов" value={k.orders} href={ordersLink()} />
+        <Stat label="Сумма заказов" value={fmtMoney(k.amount)} href={ordersLink({ sort: "amount" })} />
+        <Stat label="Сумма фактических поставок" value={fmtMoney(k.delivered)} sub={Number(k.amount) ? `${fmtPct((Number(k.delivered) / Number(k.amount)) * 100)} от заказанного` : undefined} href={ordersLink({ sort: "delivered" })} />
+        <Stat label="Ожидаемые поставки" value={k.expected} sub="заказов с недопоставкой" href={ordersLink({ status: "expected" })} />
+        <Stat label="Просроченные поставки" value={k.overdue} tone={Number(k.overdue) > 0 ? "red" : undefined} href={ordersLink({ status: "overdue" })} />
+        <Stat label="Долг по отгрузке" value={fmtMoney(k.debt_ship)} sub={`по заказам: ${fmtMoney(k.debt_order)}`} tone={Number(k.debt_ship) > 0 ? "amber" : undefined} href={ordersLink({ sort: "debt_ship" })} />
+        <Stat label="Активных поставщиков" value={k.active_suppliers} sub="заказы за 3 мес. или в работе" href="#suppliers" />
+        <Stat label="Активных закупщиков" value={k.active_buyers} sub="оформляли заказы за 3 мес." href="#buyers" />
       </div>
       <Card title="Заказано, поставлено и оплачено по месяцам" className="mb-4">
         {months.length ? <MoneyBars data={months} xKey="month" bars={[{ key: "ordered", name: "Заказано" }, { key: "delivered", name: "Поставлено" }, { key: "paid", name: "Оплачено" }]} /> : <Empty>Нет данных</Empty>}
       </Card>
       <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+        <div id="buyers" className="scroll-mt-20">
         <Card title="Закупщики" pad={false}>
           <Table>
             <thead><tr><Th>Сотрудник</Th><Th right>Заказов</Th><Th right>Сумма закупок</Th><Th right>Задач выполнено</Th><Th right>Задач открыто</Th><Th right>Просроч. задач</Th><Th right>Просроч. поставок</Th></tr></thead>
@@ -139,6 +145,8 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
             </tbody>
           </Table>
         </Card>
+        </div>
+        <div id="suppliers" className="scroll-mt-20">
         <Card title="Поставщики" pad={false}>
           <Table>
             <thead><tr><Th>Поставщик</Th><Th right>Объём закупок</Th><Th right>Поставлено</Th><Th right>Динамика цен</Th><Th right>Вовремя</Th><Th right>Задержек</Th><Th right>Срок до 1-й поставки</Th></tr></thead>
@@ -163,6 +171,7 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
             Динамика цен — изменение средневзвешенной цены последних 3 месяцев к предыдущим 3 по тем же товарам. «Вовремя» — доля количества, поставленного не позже плановой даты. Задержка — заказ, просроченный сейчас или с поставкой после плановой даты.
           </p>
         </Card>
+        </div>
       </div>
     </>
   );

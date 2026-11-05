@@ -17,6 +17,7 @@ export function orderFilters(sp: SP): SQL[] {
   const st = qp(sp, "status");
   if (st === "active") w.push(sql`o.status IN ('SENT','CONFIRMED','AWAITING','PARTIAL')`);
   else if (st === "overdue") w.push(OVERDUE_SQL(today()));
+  else if (st === "expected") w.push(sql`o.status IN ('SENT','CONFIRMED','AWAITING','PARTIAL') AND COALESCE(os.remaining,0) > 0`);
   else if (st) w.push(sql`o.status = ${st}`);
   const sup = qp(sp, "supplier");
   if (sup) w.push(sql`o.supplier_id = ${sup}`);
@@ -50,6 +51,10 @@ export function orderSort(sp: SP): SQL {
       return sql`COALESCE(os.amount,0) ${dir}`;
     case "debt":
       return sql`COALESCE(os.amount,0) - COALESCE(ps.paid,0) ${dir}`;
+    case "debt_ship":
+      return sql`COALESCE(os.delivered_amount,0) - COALESCE(ps.paid,0) ${dir}`;
+    case "delivered":
+      return sql`COALESCE(os.delivered_amount,0) ${dir}`;
     default:
       return sql`o.order_date ${dir}, o.number ${dir}`;
   }
