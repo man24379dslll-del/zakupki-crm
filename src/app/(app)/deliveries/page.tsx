@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { can, PERMS } from "@/lib/permissions";
-import { orderScope, ORDER_STATS, OVERDUE_SQL } from "@/lib/services/orders";
+import { orderScope, ORDER_STATS } from "@/lib/services/orders";
 import { opt, selectOptions } from "@/lib/services/refs";
 import { addDays, fmtDate, fmtMoney, fmtQty, orderNo, today } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, Progress, Table, Tabs, Td, Th } from "@/components/ui";
@@ -44,14 +44,15 @@ async function Expected({ sp, all, opts, u }: { sp: SP; uId: string; all: boolea
   const buyer = qp(sp, "buyer");
   if (buyer) w.push(sql`o.buyer_id = ${buyer}`);
   const when = qp(sp, "when");
-  if (when === "overdue") w.push(OVERDUE_SQL(d));
-  if (when === "week") w.push(sql`o.planned_delivery_date BETWEEN ${d}::date AND ${addDays(d, 7)}::date`);
+  // сроки — по каждой позиции: свой или общий срок заказа
+  if (when === "overdue") w.push(sql`ist.due_date < ${d}::date`);
+  if (when === "week") w.push(sql`ist.due_date BETWEEN ${d}::date AND ${addDays(d, 7)}::date`);
   const q = qp(sp, "q");
   if (q) w.push(sql`(s.name ILIKE ${"%" + q + "%"} OR o.invoice_number ILIKE ${"%" + q + "%"} OR pr.name ILIKE ${"%" + q + "%"})`);
   const res = await db.execute(sql`
     WITH ${ORDER_STATS}
-    SELECT o.id, o.number, o.order_date, o.planned_delivery_date, o.invoice_number, s.name AS supplier, u.name AS buyer,
-      pr.name AS product, ist.qty, ist.delivered, ist.last_delivery, ${OVERDUE_SQL(d)} AS overdue
+    SELECT o.id, o.number, o.order_date, ist.due_date AS planned_delivery_date, o.invoice_number, s.name AS supplier, u.name AS buyer,
+      pr.name AS product, ist.qty, ist.delivered, ist.last_delivery, COALESCE(ist.due_date < ${d}::date, false) AS overdue
     FROM purchase_orders o
     JOIN suppliers s ON s.id = o.supplier_id
     LEFT JOIN users u ON u.id = o.buyer_id
@@ -59,7 +60,7 @@ async function Expected({ sp, all, opts, u }: { sp: SP; uId: string; all: boolea
     JOIN item_stats ist ON ist.order_id = o.id AND NOT ist.is_closed AND ist.qty > ist.delivered
     JOIN products pr ON pr.id = ist.product_id
     WHERE ${sql.join(w, sql` AND `)}
-    ORDER BY overdue DESC, o.planned_delivery_date NULLS LAST, o.number
+    ORDER BY overdue DESC, ist.due_date NULLS LAST, o.number
     LIMIT 500`);
   const rows = res.rows as { id: string; number: number; order_date: string; planned_delivery_date: string | null; invoice_number: string | null; supplier: string; buyer: string | null; product: string; qty: string; delivered: string; last_delivery: string | null; overdue: boolean }[];
   return (

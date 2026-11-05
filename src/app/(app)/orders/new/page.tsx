@@ -44,7 +44,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
             <Field label="Дата счёта">
               <Input type="date" name="invoiceDate" />
             </Field>
-            <Field label="Планируемая дата поставки" hint="По ней считаются просрочки">
+            <Field label="Плановая дата поставки" hint="Общая для всех товаров. Если у товара другой срок — укажите его в строке товара">
               <Input type="date" name="plannedDeliveryDate" defaultValue={addDays(d, Number(lead?.value ?? 30))} />
             </Field>
             {can(u, PERMS.ordersViewAll) && (

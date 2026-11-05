@@ -4,7 +4,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { can, PERMS } from "@/lib/permissions";
-import { listOrders, orderScope } from "@/lib/services/orders";
+import { ITEM_STATS, listOrders, orderScope } from "@/lib/services/orders";
 import { supplierList } from "@/lib/services/suppliers";
 import { getWindowMode, pricePoints, priceWindow, weightedStats } from "@/lib/services/prices";
 import { lastAndPrev } from "@/lib/calc";
@@ -133,7 +133,7 @@ export default async function SupplierPage({ params, searchParams }: { params: P
       {tab === "deliveries" && <DeliveriesTab id={id} u={u} />}
       {tab === "prices" && <PricesTab id={id} />}
       {tab === "payments" && <PaymentsTab id={id} u={u} canSeeAdv={can(u, PERMS.ordersViewAll) || isMine} />}
-      {tab === "plan" && <PlanTab id={id} />}
+      {tab === "plan" && <PlanTab id={id} u={u} />}
       {tab === "docs" && <DocumentsBlock entityType="supplier" entityId={id} canEdit={u.role !== "VIEWER"} />}
       {tab === "comments" && <CommentsBlock entityType="supplier" entityId={id} canEdit={u.role !== "VIEWER"} />}
       {tab === "history" && <HistoryBlock entityType="supplier" entityId={id} />}
@@ -417,14 +417,70 @@ async function PaymentsTab({ id, u, canSeeAdv }: { id: string; u: U; canSeeAdv: 
   );
 }
 
-async function PlanTab({ id }: { id: string }) {
+/** План поставок поставщика: что ждём по заказам (срок позиции — свой или общий) + график из Excel (не факт) */
+async function PlanTab({ id, u }: { id: string; u: U }) {
+  const d = today();
+  const expected = (
+    await db.execute(sql`
+      WITH ${ITEM_STATS}
+      SELECT ist.due_date::text AS day, poi.planned_delivery_date IS NOT NULL AS own, pr.id AS product_id, pr.name AS product, pr.unit,
+        (ist.qty - ist.delivered)::float AS qty, o.id AS order_id, o.number
+      FROM purchase_orders o
+      JOIN item_stats ist ON ist.order_id = o.id AND NOT ist.is_closed AND ist.qty > ist.delivered
+      JOIN purchase_order_items poi ON poi.id = ist.id
+      JOIN products pr ON pr.id = ist.product_id
+      WHERE o.supplier_id = ${id} AND o.deleted_at IS NULL AND ${orderScope(u)} AND o.status IN ('SENT','CONFIRMED','AWAITING','PARTIAL')
+      ORDER BY ist.due_date NULLS LAST, o.number, pr.name`)
+  ).rows as { day: string | null; own: boolean; product_id: string; product: string; unit: string; qty: number; order_id: string; number: number }[];
+  const days = [...new Set(expected.map((e) => e.day))];
+  const plan = await PlanEntries({ id });
+  if (!expected.length && !plan) return <Card><Empty>Ожидаемых поставок и плана нет</Empty></Card>;
+  return (
+    <div className="space-y-4">
+      {expected.length > 0 && (
+        <Card title="Ожидаемые поставки по заказам" actions={<Link href={`/calendar?supplier=${id}`} className="text-xs font-medium text-brand-700 hover:underline">в календаре →</Link>} pad={false}>
+          <Table>
+            <thead><tr><Th>Товар</Th><Th right>Ждём</Th><Th>Заказ</Th><Th /></tr></thead>
+            <tbody>
+              {days.map((day) => {
+                const list = expected.filter((e) => e.day === day);
+                const late = !!day && day < d;
+                return [
+                  <tr key={day ?? "none"} className={late ? "bg-rose-50/60" : "bg-slate-50"}>
+                    <Td colSpan={4} className="font-semibold text-slate-800">
+                      {day ? fmtDate(day) : "Срок не указан"} <span className="font-normal text-slate-500">· {list.length} поз.</span> {late && <Badge tone="red">просрочено</Badge>}
+                    </Td>
+                  </tr>,
+                  ...list.map((e, i) => (
+                    <tr key={`${day}-${i}`}>
+                      <Td>
+                        <Link href={`/products/${e.product_id}`} className="text-slate-800 hover:text-brand-700">{e.product}</Link>
+                        {e.own && <span className="ml-2 text-xs text-slate-500" title="У позиции свой срок, отличный от общего срока заказа">свой срок</span>}
+                      </Td>
+                      <Td right className="whitespace-nowrap font-medium">{fmtQty(e.qty)} {e.unit}</Td>
+                      <Td><Link href={`/orders/${e.order_id}`} className="font-medium text-brand-700 hover:underline">{orderNo(e.number)}</Link></Td>
+                      <Td><Link href={`/orders/${e.order_id}#deliver`} className="text-xs font-medium text-brand-700 hover:underline">Принять →</Link></Td>
+                    </tr>
+                  )),
+                ];
+              })}
+            </tbody>
+          </Table>
+        </Card>
+      )}
+      {plan}
+    </div>
+  );
+}
+
+async function PlanEntries({ id }: { id: string }) {
   const rows = await db
     .select({ p: schema.supplyPlanEntries, product: schema.products.name, productId: schema.products.id })
     .from(schema.supplyPlanEntries)
     .innerJoin(schema.products, eq(schema.products.id, schema.supplyPlanEntries.productId))
     .where(eq(schema.supplyPlanEntries.supplierId, id))
     .orderBy(asc(schema.products.name), asc(schema.supplyPlanEntries.weekStart));
-  if (!rows.length) return <Card><Empty>Плана поставок нет</Empty></Card>;
+  if (!rows.length) return null;
   const byProduct = new Map<string, typeof rows>();
   for (const r of rows) {
     if (!byProduct.has(r.product)) byProduct.set(r.product, []);

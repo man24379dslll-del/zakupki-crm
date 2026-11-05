@@ -9,6 +9,7 @@ import { opt, selectOptions } from "@/lib/services/refs";
 import { fmtDate, fmtDateTime, fmtMoney, fmtPct, fmtPrice, fmtQty, num, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, today } from "@/lib/format";
 import { Alert, Badge, Card, Field, Input, PageHeader, Progress, Select, Stat, Table, Td, Textarea, Th, cn } from "@/components/ui";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/client";
+import { Combobox } from "@/components/combobox";
 import { CommentsBlock, DocumentsBlock, HistoryBlock } from "@/components/blocks";
 import {
   addItemAction,
@@ -42,6 +43,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const [itemsRes, delivs, pays, supplier, buyer, legal, dir, opts] = await Promise.all([
     db.execute(sql`WITH ${ITEM_STATS}
       SELECT poi.id, poi.qty, poi.price, poi.is_closed, poi.closed_note, poi.over_delivery_approved, poi.note, pr.name AS product, pr.id AS product_id, pr.unit,
+        poi.planned_delivery_date::text AS item_due, s.due_date::text AS due_date,
         d.name AS direction, s.delivered, s.delivered_amount
       FROM purchase_order_items poi JOIN products pr ON pr.id = poi.product_id
       LEFT JOIN directions d ON d.id = poi.direction_id
@@ -67,7 +69,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   ]);
   const items = itemsRes.rows as {
     id: string; qty: string; price: string | null; is_closed: boolean; closed_note: string | null; over_delivery_approved: boolean; note: string | null;
-    product: string; product_id: string; unit: string; direction: string | null; delivered: string; delivered_amount: string;
+    product: string; product_id: string; unit: string; direction: string | null; delivered: string; delivered_amount: string; item_due: string | null; due_date: string | null;
   }[];
   const dItems = delivs.length
     ? await db
@@ -86,7 +88,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const debtOrder = amount - paid;
   const debtShip = deliveredAmount - paid;
   const pct = qty > 0 ? (delivered / qty) * 100 : 0;
-  const overdue = ["SENT", "CONFIRMED", "AWAITING", "PARTIAL"].includes(o.status) && o.plannedDeliveryDate && o.plannedDeliveryDate < today() && remaining > 0;
+  // просрочка — по сроку каждой недопоставленной позиции (свой срок или общий)
+  const overdue = ["SENT", "CONFIRMED", "AWAITING", "PARTIAL"].includes(o.status) && items.some((i) => !i.is_closed && Number(i.qty) > Number(i.delivered) && i.due_date && i.due_date < today());
   const nullPrice = items.some((i) => i.price === null);
   const openItems = items.filter((i) => !i.is_closed && Number(i.qty) > Number(i.delivered));
 
@@ -178,7 +181,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             <Field label="Дата счёта">
               <Input type="date" name="invoiceDate" defaultValue={o.invoiceDate ?? ""} />
             </Field>
-            <Field label="Плановая дата поставки">
+            <Field label="Общий срок поставки" hint="Свой срок у товара — в «Позициях заказа» → «Редактировать»">
               <Input type="date" name="plannedDeliveryDate" defaultValue={o.plannedDeliveryDate ?? ""} />
             </Field>
             <Field label="Комментарий" className="sm:col-span-2 lg:col-span-3">
@@ -203,6 +206,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                   <Th right>Сумма</Th>
                   <Th right>Поставлено</Th>
                   <Th right>Остаток</Th>
+                  <Th>Срок</Th>
                   <Th>Выполнение</Th>
                 </tr>
               </thead>
@@ -233,6 +237,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                               <Field label="Цена">
                                 <Input name="price" defaultValue={i.price === null ? "" : String(Number(i.price))} className="w-24" />
                               </Field>
+                              <Field label="Свой срок (пусто — общий)">
+                                <Input name="due" type="date" defaultValue={i.item_due ?? ""} className="w-40" />
+                              </Field>
                               <label className="flex items-center gap-1 pb-2 text-xs">
                                 <input type="checkbox" name="isClosed" defaultChecked={i.is_closed} /> закрыта
                               </label>
@@ -254,6 +261,14 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                       <Td right>{i.price === null ? "—" : fmtMoney(Number(i.qty) * Number(i.price))}</Td>
                       <Td right>{fmtQty(i.delivered)}</Td>
                       <Td right>{i.is_closed ? "0" : fmtQty(Math.max(rest, 0))}</Td>
+                      <Td className="whitespace-nowrap">
+                        {i.item_due ? (
+                          <span className="font-medium text-slate-900" title="Свой срок позиции">{fmtDate(i.item_due)}</span>
+                        ) : (
+                          <span className="text-slate-400" title="Общий срок заказа">{fmtDate(i.due_date)}</span>
+                        )}
+                        {!i.is_closed && rest > 0 && i.due_date && i.due_date < today() && <div><Badge tone="red">просрочено</Badge></div>}
+                      </Td>
                       <Td className="min-w-28">
                         <div className="mb-1 text-xs text-slate-500">{fmtPct(p)}</div>
                         <Progress value={p} tone={p >= 100 || i.is_closed ? "green" : "brand"} />
@@ -265,19 +280,19 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             </Table>
             {edit && canEdit && (
               <div className="border-t border-slate-100 p-3">
-                <datalist id="products-list">
-                  {opts?.products.map((p) => <option key={p.id} value={p.name} />)}
-                </datalist>
                 <ActionForm action={addItemAction} resetOnOk className="flex flex-wrap items-end gap-2">
                   <input type="hidden" name="id" value={o.id} />
                   <Field label="Добавить товар">
-                    <Input name="item_product" list="products-list" className="w-64" />
+                    <Combobox name="item_product" free options={opt(opts?.products ?? [])} placeholder="Название или артикул" className="w-64" inputClassName="py-2" />
                   </Field>
                   <Field label="Кол-во">
                     <Input name="item_qty" className="w-24" />
                   </Field>
                   <Field label="Цена">
                     <Input name="item_price" className="w-24" />
+                  </Field>
+                  <Field label="Срок, если другой">
+                    <Input name="item_due" type="date" className="w-40" />
                   </Field>
                   <input type="hidden" name="item_direction" value="" />
                   <SubmitButton size="sm">Добавить</SubmitButton>
@@ -458,7 +473,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                 ["Наше юрлицо", legal ? (legal.shortName ? `${legal.shortName} (${legal.name})` : legal.name) : null],
                 ["Направление", dir?.name],
                 ["Дата счёта", o.invoiceDate ? fmtDate(o.invoiceDate) : null],
-                ["Плановая поставка", o.plannedDeliveryDate ? fmtDate(o.plannedDeliveryDate) : null],
+                ["Общий срок поставки", o.plannedDeliveryDate ? fmtDate(o.plannedDeliveryDate) : null],
                 ["Создан", fmtDateTime(o.createdAt)],
                 ["Комментарий", o.comment],
               ].map(([k, v]) => (

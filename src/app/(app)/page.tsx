@@ -23,19 +23,19 @@ export default async function Home() {
       SELECT
         COUNT(*) FILTER (WHERE ${OVERDUE_SQL(d)})::int AS overdue,
         COUNT(*) FILTER (WHERE o.status IN ('SENT','CONFIRMED','AWAITING','PARTIAL') AND COALESCE(os.remaining,0) > 0)::int AS expected,
-        COUNT(*) FILTER (WHERE o.status IN ('SENT','CONFIRMED','AWAITING','PARTIAL') AND o.planned_delivery_date BETWEEN ${d}::date AND ${addDays(d, 7)}::date AND COALESCE(os.remaining,0) > 0)::int AS week,
+        COUNT(*) FILTER (WHERE o.status IN ('SENT','CONFIRMED','AWAITING','PARTIAL') AND os.next_due BETWEEN ${d}::date AND ${addDays(d, 7)}::date)::int AS week,
         COUNT(*) FILTER (WHERE o.status IN ('DRAFT','SENT','CONFIRMED','AWAITING','PARTIAL'))::int AS active,
         SUM(GREATEST(COALESCE(os.delivered_amount,0) - COALESCE(ps.paid,0), 0)) FILTER (WHERE o.status <> 'CANCELLED') AS debt
       FROM purchase_orders o LEFT JOIN order_stats os ON os.order_id = o.id LEFT JOIN pay_stats ps ON ps.order_id = o.id
       WHERE o.deleted_at IS NULL AND ${orderScope(u)}`),
     db.execute(sql`
       WITH ${ORDER_STATS}
-      SELECT o.id, o.number, o.planned_delivery_date, s.name AS supplier, os.qty, os.delivered, os.remaining, ${OVERDUE_SQL(d)} AS overdue,
+      SELECT o.id, o.number, COALESCE(os.next_due, o.planned_delivery_date) AS planned_delivery_date, s.name AS supplier, os.qty, os.delivered, os.remaining, ${OVERDUE_SQL(d)} AS overdue,
         (SELECT string_agg(pr.name, ', ') FROM item_stats i JOIN products pr ON pr.id = i.product_id WHERE i.order_id = o.id AND NOT i.is_closed AND i.qty > i.delivered) AS products
       FROM purchase_orders o JOIN suppliers s ON s.id = o.supplier_id LEFT JOIN order_stats os ON os.order_id = o.id
       WHERE o.deleted_at IS NULL AND ${orderScope(u)} AND o.status IN ('SENT','CONFIRMED','AWAITING','PARTIAL') AND COALESCE(os.remaining,0) > 0
-        AND (o.planned_delivery_date IS NULL OR o.planned_delivery_date <= ${addDays(d, 7)}::date)
-      ORDER BY overdue DESC, o.planned_delivery_date NULLS LAST LIMIT 12`),
+        AND (os.next_due IS NULL OR os.next_due <= ${addDays(d, 7)}::date)
+      ORDER BY overdue DESC, os.next_due NULLS LAST LIMIT 12`),
     db.execute(sql`SELECT ${sql.raw(TASK_SELECT)} FROM ${sql.raw(TASK_FROM)}
       WHERE t.deleted_at IS NULL AND t.assignee_id = ${u.id} AND t.status IN ('NEW','IN_PROGRESS','WAITING')
       ORDER BY overdue DESC, t.due_date NULLS LAST LIMIT 20`),

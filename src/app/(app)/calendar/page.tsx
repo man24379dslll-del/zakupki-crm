@@ -66,13 +66,13 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const [orders, plan, overdue, opts] = await Promise.all([
     db.execute(sql`
       WITH ${ITEM_STATS}
-      SELECT 'order' AS kind, o.planned_delivery_date::text AS day, pr.name AS product, pr.unit, (ist.qty - ist.delivered)::float AS qty,
+      SELECT 'order' AS kind, ist.due_date::text AS day, pr.name AS product, pr.unit, (ist.qty - ist.delivered)::float AS qty,
         s.name AS supplier, s.id AS supplier_id, o.id AS order_id, o.number
       FROM purchase_orders o
       JOIN suppliers s ON s.id = o.supplier_id
       JOIN item_stats ist ON ist.order_id = o.id AND NOT ist.is_closed AND ist.qty > ist.delivered
       JOIN products pr ON pr.id = ist.product_id
-      WHERE ${sql.join(ow, sql` AND `)} AND o.planned_delivery_date BETWEEN ${gridStart}::date AND ${gridEnd}::date
+      WHERE ${sql.join(ow, sql` AND `)} AND ist.due_date BETWEEN ${gridStart}::date AND ${gridEnd}::date
       ORDER BY day, s.name, o.number, pr.name`),
     db.execute(sql`
       SELECT 'plan' AS kind, pe.week_start::text AS day, pr.name AS product, pr.unit, pe.qty::float AS qty,
@@ -86,7 +86,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
       WITH ${ITEM_STATS}
       SELECT COUNT(*)::int AS n, COUNT(DISTINCT o.id)::int AS orders FROM purchase_orders o
       JOIN item_stats ist ON ist.order_id = o.id AND NOT ist.is_closed AND ist.qty > ist.delivered
-      WHERE ${sql.join(ow, sql` AND `)} AND o.planned_delivery_date < ${d}::date`),
+      WHERE ${sql.join(ow, sql` AND `)} AND ist.due_date < ${d}::date`),
     selectOptions(),
   ]);
 

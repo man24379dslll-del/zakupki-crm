@@ -222,6 +222,8 @@ export const purchaseOrderItems = pgTable(
     qty: qty("qty").notNull(),
     /// null = цена не указана (не подменяется нулём)
     price: priceCol("price"),
+    /// свой срок поставки позиции; null = как у заказа (purchase_orders.planned_delivery_date)
+    plannedDeliveryDate: date("planned_delivery_date"),
     /// позиция закрыта: недопоставленный остаток больше не ожидается
     isClosed: boolean("is_closed").notNull().default(false),
     closedNote: text("closed_note"),

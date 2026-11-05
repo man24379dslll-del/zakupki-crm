@@ -20,7 +20,8 @@ function readItems(fd: FormData) {
   const qtys = fd.getAll("item_qty");
   const prices = fd.getAll("item_price");
   const dirs = fd.getAll("item_direction");
-  const out: { name: string; qty: number; price: number | null; directionId: string | null }[] = [];
+  const dues = fd.getAll("item_due");
+  const out: { name: string; qty: number; price: number | null; directionId: string | null; due: string | null }[] = [];
   names.forEach((name, i) => {
     const q = fnum(qtys[i]);
     const p = fnum(prices[i]);
@@ -28,7 +29,8 @@ function readItems(fd: FormData) {
     if (!name) throw new UserError(`Строка ${i + 1}: укажите товар`);
     if (q === null || Number.isNaN(q) || q <= 0) throw new UserError(`«${name}»: количество должно быть больше нуля`);
     if (p !== null && (Number.isNaN(p) || p < 0)) throw new UserError(`«${name}»: неверная цена`);
-    out.push({ name, qty: q, price: p, directionId: fstr(dirs[i]) });
+    if (fstr(dues[i]) && !fdate(dues[i])) throw new UserError(`«${name}»: неверный срок поставки`);
+    out.push({ name, qty: q, price: p, directionId: fstr(dirs[i]), due: fdate(dues[i]) });
   });
   return out;
 }
@@ -99,7 +101,7 @@ export async function createOrderAction(_: ActionResult, fd: FormData): Promise<
       for (const it of items) {
         const p = await ensureProduct(tx, it.name);
         await linkProductSupplier(tx, p.id, supplierId!);
-        await tx.insert(schema.purchaseOrderItems).values({ orderId: o.id, productId: p.id, directionId: it.directionId, qty: String(it.qty), price: it.price === null ? null : String(it.price), sortOrder: i++ });
+        await tx.insert(schema.purchaseOrderItems).values({ orderId: o.id, productId: p.id, directionId: it.directionId, plannedDeliveryDate: it.due, qty: String(it.qty), price: it.price === null ? null : String(it.price), sortOrder: i++ });
       }
       const sum = items.reduce((s, x) => s + x.qty * (x.price ?? 0), 0);
       await logActivity(tx, { userId: u.id, action: "create", entityType: "order", entityId: o.id, summary: `Создан заказ ${orderNo(o.number)} на ${sum.toLocaleString("ru-RU")} ₽ (${items.length} поз.)`, ip: await clientIp() });
@@ -188,7 +190,7 @@ export async function addItemAction(_: ActionResult, fd: FormData): Promise<Acti
       for (const it of items) {
         const p = await ensureProduct(tx, it.name);
         await linkProductSupplier(tx, p.id, o.supplierId);
-        await tx.insert(schema.purchaseOrderItems).values({ orderId: id, productId: p.id, directionId: it.directionId, qty: String(it.qty), price: it.price === null ? null : String(it.price), sortOrder: 999 });
+        await tx.insert(schema.purchaseOrderItems).values({ orderId: id, productId: p.id, directionId: it.directionId, plannedDeliveryDate: it.due, qty: String(it.qty), price: it.price === null ? null : String(it.price), sortOrder: 999 });
         await logActivity(tx, { userId: u.id, action: "update", entityType: "order", entityId: id, summary: `Добавлена позиция «${it.name}»: ${it.qty} × ${it.price ?? "—"}` });
       }
       await recalcOrderStatus(tx, id);
@@ -214,8 +216,10 @@ export async function updateItemAction(_: ActionResult, fd: FormData): Promise<A
     if (approve !== it.overDeliveryApproved && !can(u, PERMS.overDeliveryApprove)) throw new UserError("Разрешать превышение может только руководитель");
     const [prog] = await itemProgress(db, [it.orderId]).then((r) => r.filter((x) => x.id === itemId));
     if (qty < prog.delivered && !approve && !it.overDeliveryApproved) throw new UserError(`Уже поставлено ${prog.delivered} — нельзя заказать меньше без разрешения превышения`);
-    const next = { qty: String(qty), price: price === null ? null : String(price), isClosed, closedNote: isClosed ? fstr(fd.get("closedNote")) ?? it.closedNote : null, overDeliveryApproved: approve };
-    const changes = diff(it as unknown as Record<string, unknown>, next, { qty: "Количество", price: "Цена", isClosed: "Закрыта", closedNote: "Причина закрытия", overDeliveryApproved: "Превышение разрешено" });
+    if (fstr(fd.get("due")) && !fdate(fd.get("due"))) throw new UserError("Неверный срок поставки");
+    // пустой срок — позиция снова идёт по общему сроку заказа
+    const next = { qty: String(qty), price: price === null ? null : String(price), plannedDeliveryDate: fdate(fd.get("due")), isClosed, closedNote: isClosed ? fstr(fd.get("closedNote")) ?? it.closedNote : null, overDeliveryApproved: approve };
+    const changes = diff(it as unknown as Record<string, unknown>, next, { qty: "Количество", price: "Цена", plannedDeliveryDate: "Срок поставки позиции", isClosed: "Закрыта", closedNote: "Причина закрытия", overDeliveryApproved: "Превышение разрешено" });
     if (!Object.keys(changes).length) return { ok: "Изменений нет" };
     const [p] = await db.select({ name: schema.products.name }).from(schema.products).where(eq(schema.products.id, it.productId));
     await db.transaction(async (tx) => {

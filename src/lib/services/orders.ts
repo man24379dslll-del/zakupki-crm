@@ -11,16 +11,19 @@ export { computeStatus, checkOverDelivery } from "@/lib/calc";
  * Агрегаты по позициям/заказам считаются в SQL из первичных записей (позиции, поставки, оплаты).
  * Ничего производного не хранится — расхождений «как в Excel» быть не может.
  */
+/** due_date — срок позиции: свой (poi.planned_delivery_date) или общий срок заказа */
 export const ITEM_STATS = sql`
   item_stats AS (
     SELECT poi.id, poi.order_id, poi.product_id, poi.qty, poi.price, poi.is_closed,
+      COALESCE(poi.planned_delivery_date, po.planned_delivery_date) AS due_date,
       COALESCE(SUM(di.qty) FILTER (WHERE d.id IS NOT NULL), 0) AS delivered,
       COALESCE(SUM(di.qty * COALESCE(di.price, poi.price)) FILTER (WHERE d.id IS NOT NULL), 0) AS delivered_amount,
       MAX(d.date) AS last_delivery
     FROM purchase_order_items poi
+    JOIN purchase_orders po ON po.id = poi.order_id
     LEFT JOIN delivery_items di ON di.order_item_id = poi.id
     LEFT JOIN deliveries d ON d.id = di.delivery_id AND d.deleted_at IS NULL
-    GROUP BY poi.id
+    GROUP BY poi.id, po.planned_delivery_date
   )`;
 
 export const ORDER_STATS = sql`
@@ -34,7 +37,9 @@ export const ORDER_STATS = sql`
       SUM(CASE WHEN is_closed THEN 0 ELSE GREATEST(qty - delivered, 0) END) AS remaining,
       BOOL_OR(price IS NULL) AS has_null_price,
       COUNT(*) AS items_count,
-      MAX(last_delivery) AS last_delivery
+      MAX(last_delivery) AS last_delivery,
+      -- ближайший срок среди ещё не пришедших позиций: по нему считаются просрочки
+      MIN(due_date) FILTER (WHERE NOT is_closed AND qty > delivered) AS next_due
     FROM item_stats GROUP BY order_id
   ),
   pay_stats AS (
@@ -75,8 +80,8 @@ export function orderScope(u: SessionUser, alias = "o"): SQL {
   return sql`${sql.raw(alias)}.buyer_id = ${u.id}`;
 }
 
-export const OVERDUE_SQL = (d: string) =>
-  sql`(o.status IN ('SENT','CONFIRMED','AWAITING','PARTIAL') AND o.planned_delivery_date < ${d}::date AND COALESCE(os.remaining,0) > 0)`;
+/** Заказ просрочен, если срок хотя бы одной недопоставленной позиции (свой или общий) прошёл */
+export const OVERDUE_SQL = (d: string) => sql`(o.status IN ('SENT','CONFIRMED','AWAITING','PARTIAL') AND COALESCE(os.next_due < ${d}::date, false))`;
 
 export interface OrderListParams {
   where?: SQL[];

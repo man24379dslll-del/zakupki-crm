@@ -160,7 +160,7 @@ export function OrderItemsEditor({
 }: {
   products: { id: string; name: string; hint?: string | null }[];
   directions: { id: string; name: string; hint?: string | null }[];
-  initial?: { productId?: string; productName?: string; qty?: string; price?: string; directionId?: string }[];
+  initial?: { productId?: string; productName?: string; qty?: string; price?: string; directionId?: string; due?: string }[];
 }) {
   const nextKey = useRef(0);
   const withKey = (r: NonNullable<typeof initial>[number]) => ({ ...r, _k: nextKey.current++ });
@@ -171,25 +171,26 @@ export function OrderItemsEditor({
   const directionOpts = directions.map((d) => ({ value: d.id, label: d.name, hint: d.hint }));
   return (
     <div>
-      <div className="hidden grid-cols-12 gap-2 px-1 pb-1 text-xs font-medium text-slate-500 sm:grid">
-        <div className="col-span-5">Товар</div>
-        <div className="col-span-2">Количество</div>
-        <div className="col-span-2">Цена за ед., ₽</div>
-        <div className="col-span-2">Направление</div>
-        <div className="col-span-1" />
+      <div className="hidden gap-2 px-1 pb-1 text-xs font-medium text-slate-500 sm:grid sm:grid-cols-[minmax(0,4fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.8fr)_minmax(0,1.7fr)_auto]">
+        <div>Товар</div>
+        <div>Количество</div>
+        <div>Цена за ед., ₽</div>
+        <div title="Если пусто — общая плановая дата заказа">Срок, если другой</div>
+        <div>Направление</div>
+        <div className="w-12" />
       </div>
       <div className="space-y-2">
         {rows.map((r, i) => (
-          <div key={r._k} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-100 p-2 sm:grid-cols-12 sm:border-0 sm:p-0">
+          <div key={r._k} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-100 p-2 sm:border-0 sm:p-0 sm:grid-cols-[minmax(0,4fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.8fr)_minmax(0,1.7fr)_auto]">
             {/* free: можно вписать новый товар — сервер проверит похожие и спросит */}
-            <Combobox name="item_product" free options={productOpts} defaultValue={r.productName ?? ""} placeholder="Начните вводить название или артикул" className="col-span-2 sm:col-span-5" inputClassName="py-2" />
+            <Combobox name="item_product" free options={productOpts} defaultValue={r.productName ?? ""} placeholder="Начните вводить название или артикул" className="col-span-2 sm:col-span-1" inputClassName="py-2" />
             <input
               name="item_qty"
               inputMode="decimal"
               defaultValue={r.qty}
               placeholder="Кол-во"
               onChange={(e) => setVals((v) => v.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm sm:col-span-2"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
             <input
               name="item_price"
@@ -197,12 +198,14 @@ export function OrderItemsEditor({
               defaultValue={r.price}
               placeholder="Цена"
               onChange={(e) => setVals((v) => v.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm sm:col-span-2"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
-            <Combobox name="item_direction" options={directionOpts} defaultValue={r.directionId ?? ""} placeholder="как у заказа" className="sm:col-span-2" inputClassName="py-2" />
+            {/* свой срок позиции; пусто — общая плановая дата заказа */}
+            <input name="item_due" type="date" defaultValue={r.due} title="Срок поставки этой позиции, если отличается от общего" className="rounded-lg border border-slate-300 px-2 py-2 text-sm text-slate-700" />
+            <Combobox name="item_direction" options={directionOpts} defaultValue={r.directionId ?? ""} placeholder="как у заказа" inputClassName="py-2" />
             <button
               type="button"
-              className="text-sm text-slate-400 hover:text-rose-600 sm:col-span-1"
+              className="w-12 text-sm text-slate-400 hover:text-rose-600"
               onClick={() => {
                 setRows((x) => x.filter((_, j) => j !== i));
                 setVals((x) => x.filter((_, j) => j !== i));

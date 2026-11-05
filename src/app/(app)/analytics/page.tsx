@@ -67,11 +67,12 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
       ORDER BY 4 DESC NULLS LAST`),
     db.execute(sql`WITH ${ORDER_STATS},
       lastd AS (SELECT dl.order_id, MAX(dl.date) last_date, MIN(dl.date) first_date FROM deliveries dl WHERE dl.deleted_at IS NULL GROUP BY 1),
-      ontime AS (SELECT dl.order_id, SUM(di.qty) FILTER (WHERE dl.date <= o.planned_delivery_date) q_on, SUM(di.qty) q_all
-        FROM deliveries dl JOIN delivery_items di ON di.delivery_id = dl.id JOIN purchase_orders o ON o.id = dl.order_id WHERE dl.deleted_at IS NULL AND o.planned_delivery_date IS NOT NULL GROUP BY 1)
+      -- вовремя = не позже срока позиции (свой срок или общий срок заказа)
+      ontime AS (SELECT dl.order_id, SUM(di.qty) FILTER (WHERE dl.date <= ist.due_date) q_on, SUM(di.qty) q_all, BOOL_OR(dl.date > ist.due_date) late
+        FROM deliveries dl JOIN delivery_items di ON di.delivery_id = dl.id JOIN item_stats ist ON ist.id = di.order_item_id WHERE dl.deleted_at IS NULL AND ist.due_date IS NOT NULL GROUP BY 1)
       SELECT s.id, s.name, COUNT(*)::int orders, SUM(os.amount) FILTER (WHERE o.status <> 'CANCELLED') amount, SUM(os.delivered_amount) delivered,
         SUM(ot.q_on) q_on, SUM(ot.q_all) q_all,
-        COUNT(*) FILTER (WHERE ${OVERDUE_SQL(d)} OR (ld.last_date > o.planned_delivery_date))::int delays,
+        COUNT(*) FILTER (WHERE ${OVERDUE_SQL(d)} OR COALESCE(ot.late, false))::int delays,
         AVG(ld.first_date - o.order_date) FILTER (WHERE ld.first_date IS NOT NULL) lead_days
       FROM purchase_orders o JOIN suppliers s ON s.id = o.supplier_id LEFT JOIN order_stats os ON os.order_id = o.id LEFT JOIN lastd ld ON ld.order_id = o.id LEFT JOIN ontime ot ON ot.order_id = o.id
       WHERE ${W} GROUP BY s.id ORDER BY amount DESC NULLS LAST`),
