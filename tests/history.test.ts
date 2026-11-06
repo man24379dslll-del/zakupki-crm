@@ -24,3 +24,14 @@ test("оплата — дата, сумма, способ", () => {
   assert.equal(sp(paymentHeadline({ date: "2026-11-05", amount: 100000, method: "CASH" })), "Оплата 05.11.2026: 100 000 ₽, наличные");
   assert.equal(sp(paymentHeadline({ date: null, amount: 5000, method: "BANK" })), "Оплата 5 000 ₽, безнал");
 });
+
+test("сколько задача ждёт: часы и дни", async () => {
+  const { fmtDuration } = await import("../src/lib/format");
+  const now = Date.parse("2026-11-06T12:00:00Z");
+  const ago = (h: number) => new Date(now - h * 3600e3).toISOString();
+  assert.equal(fmtDuration(ago(0.5), now), "меньше часа");
+  assert.equal(fmtDuration(ago(5), now), "5 ч");
+  assert.equal(fmtDuration(ago(51), now), "2 дн. 3 ч");
+  assert.equal(fmtDuration(ago(48), now), "2 дн.");
+  assert.equal(fmtDuration(ago(24 * 12 + 5), now), "12 дн.");
+});

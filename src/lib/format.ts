@@ -37,6 +37,16 @@ export function fmtDateTime(v: unknown) {
   const d = new Date(v as string);
   return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+/** Сколько прошло: «меньше часа», «5 ч», «2 дн. 3 ч», «12 дн.» (для «сколько задача ждёт») */
+export function fmtDuration(from: unknown, now: number = Date.now()) {
+  if (!from) return "—";
+  const ms = now - new Date(from as string).getTime();
+  if (!Number.isFinite(ms) || ms < 3600e3) return "меньше часа";
+  const h = Math.floor(ms / 3600e3);
+  if (h < 24) return `${h} ч`;
+  const d = Math.floor(h / 24);
+  return d >= 7 || h % 24 === 0 ? `${d} дн.` : `${d} дн. ${h % 24} ч`;
+}
 export const orderNo = (n: number) => `З-${String(n).padStart(5, "0")}`;
 
 /** Сегодня в формате YYYY-MM-DD (часовой пояс сервера/компании) */

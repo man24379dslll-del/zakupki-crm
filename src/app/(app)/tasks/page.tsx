@@ -47,7 +47,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
         <FSelect name="due" sp={sp} placeholder="Любой срок" options={[{ value: "today", label: "На сегодня" }, { value: "week", label: "До 7 дней" }]} />
         <FSelect name="priority" sp={sp} placeholder="Любой приоритет" options={Object.entries(PRIORITY_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
       </FilterBar>
-      <Card pad={false}>{rows.length ? <TaskList rows={rows} showAssignee={all || who === "byme" || who === "approve"} me={u.role === "VIEWER" ? null : { id: u.id, canAssign: can(u, PERMS.tasksAssign) }} /> : <Empty>Задач нет</Empty>}</Card>
+      <Card pad={false}>{rows.length ? <TaskList rows={rows} showWaiting={who === "byme" || who === "approve"} showAssignee={all || who === "byme" || who === "approve"} me={u.role === "VIEWER" ? null : { id: u.id, canAssign: can(u, PERMS.tasksAssign) }} /> : <Empty>Задач нет</Empty>}</Card>
     </>
   );
 }

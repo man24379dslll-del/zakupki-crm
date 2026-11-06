@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { fmtDateTime, PRIORITY_LABEL, PRIORITY_TONE, TASK_STATUS_LABEL, TASK_STATUS_TONE } from "@/lib/format";
+import { fmtDateTime, fmtDuration, PRIORITY_LABEL, PRIORITY_TONE, TASK_STATUS_LABEL, TASK_STATUS_TONE } from "@/lib/format";
 import { sqlList, TASK_ACTIVE, taskSteps, type FlowUser, type TaskStatus } from "@/lib/task-flow";
 import { Badge, cn } from "@/components/ui";
 import { TaskStepButtons } from "@/components/client";
@@ -20,10 +20,16 @@ export interface TaskRow {
   order_number: number | null;
   overdue: boolean;
   due_soon: boolean;
+  /** с какого момента задача в текущем статусе */
+  status_since: string;
 }
 
 /** me — кто смотрит (null — наблюдатель, без кнопок). У строки — статус и главная кнопка следующего шага */
-export function TaskList({ rows, showAssignee, me }: { rows: TaskRow[]; showAssignee?: boolean; me: FlowUser | null }) {
+/** «не взята в работу 2 дн.», «в работе 5 ч», «ждёт вашего согласования 3 ч» */
+const WAIT_LABEL: Record<string, string> = { NEW: "не взята в работу", IN_PROGRESS: "в работе", WAITING: "ожидает ответа", REVIEW: "ждёт согласования" };
+
+export function TaskList({ rows, showAssignee, me, showWaiting }: { rows: TaskRow[]; showAssignee?: boolean; me: FlowUser | null; showWaiting?: boolean }) {
+  const now = Date.now();
   return (
     <ul className="divide-y divide-slate-100">
       {rows.map((t) => {
@@ -40,6 +46,11 @@ export function TaskList({ rows, showAssignee, me }: { rows: TaskRow[]; showAssi
                 {t.priority !== "NORMAL" && <Badge tone={PRIORITY_TONE[t.priority]}>{PRIORITY_LABEL[t.priority]}</Badge>}
                 {t.due_date && <span className={cn(t.overdue && "font-semibold text-rose-600", t.due_soon && !t.overdue && "font-medium text-amber-700")}>срок {fmtDateTime(t.due_date)}{t.overdue && " — просрочена"}</span>}
                 {showAssignee && <span>· исполнитель {t.assignee}</span>}
+                {showWaiting && WAIT_LABEL[t.status] && (
+                  <span className={cn("font-medium", t.status === "NEW" && now - new Date(t.status_since).getTime() > 24 * 3600e3 ? "text-rose-600" : t.status === "REVIEW" ? "text-cyan-800" : "text-slate-700")}>
+                    · {WAIT_LABEL[t.status]} {fmtDuration(t.status_since, now)}
+                  </span>
+                )}
                 {mine && <span>· от {t.creator}</span>}
                 {t.supplier && <span>· {t.supplier}</span>}
                 {t.order_number && <span>· заказ З-{String(t.order_number).padStart(5, "0")}</span>}
@@ -54,7 +65,8 @@ export function TaskList({ rows, showAssignee, me }: { rows: TaskRow[]; showAssi
 }
 
 export const TASK_SELECT = `
-  t.id, t.title, t.status, t.priority, t.due_date, t.assignee_id, t.creator_id, (c.is_active AND c.deleted_at IS NULL) AS creator_active,
+  t.id, t.title, t.status, t.priority, t.due_date, t.assignee_id, t.creator_id,
+  COALESCE((SELECT max(l.created_at) FROM activity_logs l WHERE l.entity_type = 'task' AND l.entity_id = t.id::text AND (l.action = 'status' OR l.changes ? 'Статус')), t.created_at) AS status_since, (c.is_active AND c.deleted_at IS NULL) AS creator_active,
   a.name AS assignee, c.name AS creator, s.name AS supplier, o.number AS order_number,
   (t.status IN (${sqlList(TASK_ACTIVE)}) AND t.due_date < now()) AS overdue,
   (t.status IN (${sqlList(TASK_ACTIVE)}) AND t.due_date BETWEEN now() AND now() + interval '2 days') AS due_soon`;

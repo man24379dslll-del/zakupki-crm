@@ -20,7 +20,7 @@ export default async function Home() {
   const all = can(u, PERMS.ordersViewAll);
   const monthStart = d.slice(0, 8) + "01";
 
-  const [kpi, deliveries, tasks, stats, activity, approvals] = await Promise.all([
+  const [kpi, deliveries, tasks, stats, activity, byMeRes] = await Promise.all([
     db.execute(sql`
       WITH ${ORDER_STATS}
       SELECT
@@ -52,11 +52,13 @@ export default async function Home() {
         (SELECT COUNT(*) FROM tasks t WHERE t.deleted_at IS NULL AND ${sql.raw(`t.status IN (${sqlList(TASK_ACTIVE)})`)} AND t.due_date < now() AND ${all ? sql`TRUE` : sql`t.assignee_id = ${u.id}`})::int AS tasks_overdue`),
     db.execute(sql`SELECT l.id, l.created_at, l.summary, l.entity_type, l.entity_id, l.changes, us.name AS who FROM activity_logs l LEFT JOIN users us ON us.id = l.user_id
       WHERE l.action <> 'login' AND ${all ? sql`TRUE` : sql`l.user_id = ${u.id}`} ORDER BY l.created_at DESC LIMIT 10`),
-    // сотрудники сдали мои задачи — нужно согласовать или вернуть
-    db.execute(sql`SELECT ${sql.raw(TASK_SELECT)} FROM ${sql.raw(TASK_FROM)}
-      WHERE t.deleted_at IS NULL AND t.creator_id = ${u.id} AND t.assignee_id <> ${u.id} AND t.status = 'REVIEW' ORDER BY t.submitted_at LIMIT 20`),
+    // задачи, которые я поставил другим: статус и сколько ждут; сданные на согласование — первыми
+    db.execute(sql`SELECT * FROM (SELECT ${sql.raw(TASK_SELECT)} FROM ${sql.raw(TASK_FROM)}
+      WHERE t.deleted_at IS NULL AND t.creator_id = ${u.id} AND t.assignee_id <> ${u.id} AND t.status IN ('NEW','IN_PROGRESS','WAITING','REVIEW')) x
+      ORDER BY (x.status = 'REVIEW') DESC, x.status_since LIMIT 30`),
   ]);
-  const ap = approvals.rows as unknown as TaskRow[];
+  const byMe = byMeRes.rows as unknown as TaskRow[];
+  const ap = byMe.filter((t) => t.status === "REVIEW");
   const me = u.role === "VIEWER" ? null : { id: u.id, canAssign: can(u, PERMS.tasksAssign) };
   const k = kpi.rows[0] as { overdue: number; expected: number; week: number; active: number; debt: string | null };
   const dl = deliveries.rows as { id: string; number: number; planned_delivery_date: string | null; supplier: string; qty: string; delivered: string; remaining: string; overdue: boolean; products: string }[];
@@ -96,16 +98,6 @@ export default async function Home() {
         {/* слева: задачи, итоги месяца, последние действия; справа: поставки */}
         <div className="space-y-4">
           <Card title="Сегодня" actions={u.role !== "VIEWER" && <Link href="/tasks/new" className="text-xs font-medium text-brand-700">+ задача</Link>} pad={false}>
-            {ap.length > 0 && (
-              <>
-                <div className="flex items-center justify-between border-b border-slate-100 bg-cyan-50 px-4 py-1.5 text-xs font-medium text-cyan-900">
-                  <span>Ждут вашего согласования: {ap.length}</span>
-                  <Link href="/tasks?who=approve" className="hover:underline">все →</Link>
-                </div>
-                <TaskList rows={ap.slice(0, 6)} showAssignee me={me} />
-                <div className="border-y border-slate-100 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500">Мои задачи на сегодня</div>
-              </>
-            )}
             {todayTasks.length === 0 ? <Empty>На сегодня задач нет 👍</Empty> : <TaskList rows={todayTasks} me={me} />}
             {otherTasks.length > 0 && (
               <>
@@ -114,6 +106,21 @@ export default async function Home() {
               </>
             )}
           </Card>
+          {byMe.length > 0 && (
+            <Card
+              title={`Поставленные мной задачи: ${byMe.length}`}
+              actions={<Link href="/tasks?who=byme" className="text-xs font-medium text-brand-700">все →</Link>}
+              pad={false}
+            >
+              <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-slate-100 bg-slate-50 px-4 py-1.5 text-xs text-slate-600">
+                {ap.length > 0 && <span className="font-medium text-cyan-800">ждут вашего согласования: {ap.length}</span>}
+                <span>не взяты в работу: {byMe.filter((t) => t.status === "NEW").length}</span>
+                <span>в работе: {byMe.filter((t) => t.status === "IN_PROGRESS" || t.status === "WAITING").length}</span>
+                {byMe.some((t) => t.overdue) && <span className="font-medium text-rose-600">просрочено: {byMe.filter((t) => t.overdue).length}</span>}
+              </div>
+              <TaskList rows={byMe.slice(0, 8)} showAssignee showWaiting me={me} />
+            </Card>
+          )}
           <Card title={all ? "Отдел за текущий месяц" : "Моя статистика за месяц"}>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {[
