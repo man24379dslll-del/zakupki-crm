@@ -8,6 +8,8 @@ import { storageKind } from "@/lib/storage";
 import { Alert, Badge, Card, cn, Empty, Field, Input, PageHeader, Select, Table, Tabs, Td, Th } from "@/components/ui";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/client";
 import { ChangesView } from "@/components/blocks";
+import { LogEntry } from "@/components/log-entry";
+import { loadLogDetails } from "@/lib/services/log-details";
 import { Combobox } from "@/components/combobox";
 import { FDate, FilterBar, FSelect, pageParams, Pagination, qp, SearchInput, type SP } from "@/components/list";
 import { mergeRefAction, restoreRecordAction, rollbackImportAction, saveRefAction, saveSettingsAction, toggleRefAction, uploadImportAction } from "./actions";
@@ -101,6 +103,7 @@ async function AuditTab({ sp }: { sp: SP }) {
     db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users).orderBy(schema.users.name),
   ]);
   const rows = res.rows as { id: string; created_at: string; who: string | null; action: string; entity_type: string; entity_id: string; summary: string; changes: unknown; ip: string | null; total: number }[];
+  const details = await loadLogDetails(rows.map((r) => r.id));
   const href = (t: string, id: string) => ({ order: `/orders/${id}`, supplier: `/suppliers/${id}`, product: `/products/${id}`, task: `/tasks/${id}`, import: `/settings/import/${id}` })[t];
   return (
     <>
@@ -123,7 +126,7 @@ async function AuditTab({ sp }: { sp: SP }) {
                   <Td className="whitespace-nowrap">{r.who ?? "система"}</Td>
                   <Td className="whitespace-nowrap text-xs">{ENTITY_LABEL[r.entity_type] ?? r.entity_type} · {ACTION_LABEL[r.action] ?? r.action}</Td>
                   <Td>
-                    {href(r.entity_type, r.entity_id) ? <Link className="hover:text-brand-700" href={href(r.entity_type, r.entity_id)!}>{r.summary}</Link> : r.summary}
+                    <LogEntry summary={r.summary} detail={details.get(r.id)} href={(() => { const d = details.get(r.id); return d?.orderId ? `/orders/${d.orderId}` : href(r.entity_type, r.entity_id); })()} />
                     <ChangesView changes={r.changes} />
                   </Td>
                 </tr>

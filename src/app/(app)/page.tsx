@@ -7,6 +7,8 @@ import { orderScope, ORDER_STATS, OVERDUE_SQL } from "@/lib/services/orders";
 import { addDays, fmtDate, fmtDateTime, fmtMoney, fmtQty, orderNo, today } from "@/lib/format";
 import { Badge, Card, Empty, LinkButton, Progress, Stat } from "@/components/ui";
 import { ChangesView } from "@/components/blocks";
+import { LogEntry } from "@/components/log-entry";
+import { loadLogDetails } from "@/lib/services/log-details";
 import { TaskList, TASK_FROM, TASK_SELECT, type TaskRow } from "./tasks/task-list";
 import { sqlList, TASK_ACTIVE } from "@/lib/task-flow";
 
@@ -48,7 +50,7 @@ export default async function Home() {
         (SELECT COUNT(*) FROM deliveries dl JOIN purchase_orders o ON o.id = dl.order_id WHERE dl.deleted_at IS NULL AND dl.date >= ${monthStart}::date AND ${all ? sql`TRUE` : sql`o.buyer_id = ${u.id}`})::int AS deliveries,
         (SELECT COUNT(*) FROM tasks t WHERE t.status = 'DONE' AND t.completed_at >= ${monthStart}::date AND ${all ? sql`TRUE` : sql`t.assignee_id = ${u.id}`})::int AS tasks_done,
         (SELECT COUNT(*) FROM tasks t WHERE t.deleted_at IS NULL AND ${sql.raw(`t.status IN (${sqlList(TASK_ACTIVE)})`)} AND t.due_date < now() AND ${all ? sql`TRUE` : sql`t.assignee_id = ${u.id}`})::int AS tasks_overdue`),
-    db.execute(sql`SELECT l.created_at, l.summary, l.entity_type, l.entity_id, l.changes, us.name AS who FROM activity_logs l LEFT JOIN users us ON us.id = l.user_id
+    db.execute(sql`SELECT l.id, l.created_at, l.summary, l.entity_type, l.entity_id, l.changes, us.name AS who FROM activity_logs l LEFT JOIN users us ON us.id = l.user_id
       WHERE l.action <> 'login' AND ${all ? sql`TRUE` : sql`l.user_id = ${u.id}`} ORDER BY l.created_at DESC LIMIT 10`),
     // сотрудники сдали мои задачи — нужно согласовать или вернуть
     db.execute(sql`SELECT ${sql.raw(TASK_SELECT)} FROM ${sql.raw(TASK_FROM)}
@@ -60,7 +62,8 @@ export default async function Home() {
   const dl = deliveries.rows as { id: string; number: number; planned_delivery_date: string | null; supplier: string; qty: string; delivered: string; remaining: string; overdue: boolean; products: string }[];
   const tk = tasks.rows as unknown as TaskRow[];
   const st = stats.rows[0] as { orders: number; amount: string; deliveries: number; tasks_done: number; tasks_overdue: number };
-  const act = activity.rows as { created_at: string; summary: string; entity_type: string; entity_id: string; changes: unknown; who: string | null }[];
+  const act = activity.rows as { id: string; created_at: string; summary: string; entity_type: string; entity_id: string; changes: unknown; who: string | null }[];
+  const actDetails = await loadLogDetails(act.map((a) => a.id));
   const todayTasks = tk.filter((t) => t.overdue || (t.due_date && t.due_date.slice(0, 10) <= d) || t.due_soon);
   const otherTasks = tk.filter((t) => !todayTasks.includes(t));
   const hour = Number(new Intl.DateTimeFormat("ru-RU", { hour: "numeric", timeZone: "Europe/Moscow" }).format(new Date()));
@@ -160,10 +163,10 @@ export default async function Home() {
         <Card title="Последние действия" actions={can(u, PERMS.auditView) && <Link href="/settings?tab=audit" className="text-xs font-medium text-brand-700">журнал →</Link>}>
           {act.length === 0 ? <Empty>Пока пусто</Empty> : (
             <ul className="space-y-2.5">
-              {act.map((a, i) => (
-                <li key={i} className="text-sm">
+              {act.map((a) => (
+                <li key={a.id} className="text-sm">
                   <div className="text-xs text-slate-500">{fmtDateTime(a.created_at)}{all && ` · ${a.who ?? "система"}`}</div>
-                  {link(a.entity_type, a.entity_id) ? <Link href={link(a.entity_type, a.entity_id)!} className="hover:text-brand-700">{a.summary}</Link> : a.summary}
+                  <LogEntry summary={a.summary} detail={actDetails.get(a.id)} href={(() => { const d = actDetails.get(a.id); return d?.orderId ? `/orders/${d.orderId}` : link(a.entity_type, a.entity_id); })()} />
                   <ChangesView changes={a.changes} />
                 </li>
               ))}

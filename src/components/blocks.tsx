@@ -3,6 +3,8 @@ import { db, schema } from "@/db";
 import { fmtDateTime } from "@/lib/format";
 import { ActionForm, ConfirmButton, SubmitButton } from "./client";
 import { Card, Empty, Textarea } from "./ui";
+import { LogEntry } from "./log-entry";
+import { loadLogDetails } from "@/lib/services/log-details";
 import { deleteDocumentAction, uploadDocumentAction } from "@/app/actions/documents";
 import { addCommentAction } from "@/app/(app)/orders/actions";
 
@@ -114,6 +116,7 @@ export async function HistoryBlock({ entityType, entityId, limit = 50 }: { entit
     .where(and(eq(schema.activityLogs.entityType, entityType), eq(schema.activityLogs.entityId, entityId)))
     .orderBy(desc(schema.activityLogs.createdAt))
     .limit(limit);
+  const details = await loadLogDetails(rows.map((r) => r.l.id));
   return (
     <Card title="История изменений">
       {rows.length === 0 ? (
@@ -125,7 +128,7 @@ export async function HistoryBlock({ entityType, entityId, limit = 50 }: { entit
               <div className="text-xs text-slate-500">
                 {fmtDateTime(l.createdAt)} · <b className="text-slate-700">{who ?? "система"}</b>
               </div>
-              <div className="text-slate-800">{l.summary}</div>
+              <LogEntry summary={l.summary} detail={details.get(l.id)} />
               <ChangesView changes={l.changes} />
             </li>
           ))}

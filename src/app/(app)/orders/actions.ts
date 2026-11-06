@@ -10,6 +10,7 @@ import { fdate, fnum, fstr, safe, UserError } from "@/lib/forms";
 import { ensureProduct, findProductExact, linkProductSupplier, similarProducts } from "@/lib/services/refs";
 import { isSimilar, normKey } from "@/lib/normalize";
 import { assertOrderAccess, checkOverDelivery, itemProgress, recalcOrderStatus } from "@/lib/services/orders";
+import { deliveryHeadline, paymentHeadline } from "@/lib/history";
 import { ORDER_PAY_LABEL, ORDER_STATUS_LABEL, orderNo, today } from "@/lib/format";
 import type { ActionResult } from "@/components/client";
 
@@ -329,8 +330,8 @@ export async function registerDeliveryAction(_: ActionResult, fd: FormData): Pro
     if (!lines.length) throw new UserError("Укажите количество хотя бы по одной позиции");
 
     // превышение заказанного количества — только с подтверждением руководителя
-    const names = new Map((await db.select({ id: schema.purchaseOrderItems.id, name: schema.products.name }).from(schema.purchaseOrderItems).innerJoin(schema.products, eq(schema.products.id, schema.purchaseOrderItems.productId)).where(eq(schema.purchaseOrderItems.orderId, orderId))).map((r) => [r.id, r.name]));
-    const over = checkOverDelivery(progress.map((p) => ({ ...p, name: names.get(p.id) })), new Map(lines.map((l) => [l.itemId, l.qty])));
+    const names = new Map((await db.select({ id: schema.purchaseOrderItems.id, name: schema.products.name, unit: schema.products.unit }).from(schema.purchaseOrderItems).innerJoin(schema.products, eq(schema.products.id, schema.purchaseOrderItems.productId)).where(eq(schema.purchaseOrderItems.orderId, orderId))).map((r) => [r.id, r]));
+    const over = checkOverDelivery(progress.map((p) => ({ ...p, name: names.get(p.id)?.name })), new Map(lines.map((l) => [l.itemId, l.qty])));
     let approvedOver = false;
     if (over.length) {
       const text = over.map((x) => `«${x.name}»: заказано ${x.ordered}, будет ${x.total}`).join("; ");
@@ -352,16 +353,17 @@ export async function registerDeliveryAction(_: ActionResult, fd: FormData): Pro
       if (approvedOver) await tx.update(schema.purchaseOrderItems).set({ overDeliveryApproved: true }).where(inArray(schema.purchaseOrderItems.id, over.map((x) => x.itemId)));
       const [was, now] = await recalcOrderStatus(tx, orderId);
       const total = lines.reduce((s, l) => s + l.qty, 0);
+      const head = deliveryHeadline(date, lines.map((l) => ({ name: names.get(l.itemId)?.name ?? "товар", unit: names.get(l.itemId)?.unit || "шт", qty: l.qty, price: l.price })));
       await logActivity(tx, {
         userId: u.id,
         action: "create",
         entityType: "delivery",
         entityId: d.id,
-        summary: `Поставка по заказу ${orderNo(o.number)} от ${date}: ${total} ед. (${lines.length} поз.)${approvedOver ? ", превышение подтверждено руководителем" : ""}`,
+        summary: `${head} · заказ ${orderNo(o.number)}${approvedOver ? ", превышение подтверждено руководителем" : ""}`,
         changes: was !== now ? { "Статус заказа": [ORDER_STATUS_LABEL[was], ORDER_STATUS_LABEL[now]] } : null,
         ip: await clientIp(),
       });
-      await logActivity(tx, { userId: u.id, action: "delivery", entityType: "order", entityId: orderId, summary: `Зарегистрирована поставка от ${date}: ${total} ед.` });
+      await logActivity(tx, { userId: u.id, action: "delivery", entityType: "order", entityId: orderId, summary: head });
     });
     revalidatePath(`/orders/${orderId}`);
     return { ok: "Поставка зарегистрирована" };
@@ -416,7 +418,7 @@ export async function registerPaymentAction(_: ActionResult, fd: FormData): Prom
     await db.transaction(async (tx) => {
       const [p] = await tx.insert(schema.payments).values({ supplierId: supplierId!, orderId, legalEntityId, type, method, date, amount: String(amount), docNumber: fstr(fd.get("docNumber")), comment: fstr(fd.get("comment")), createdById: u.id }).returning();
       await logActivity(tx, { userId: u.id, action: "create", entityType: "payment", entityId: p.id, summary: `Оплата ${amount.toLocaleString("ru-RU")} ₽ от ${date}${label}`, ip: await clientIp() });
-      if (orderId) await logActivity(tx, { userId: u.id, action: "payment", entityType: "order", entityId: orderId, summary: `Зарегистрирована оплата ${amount.toLocaleString("ru-RU")} ₽ от ${date}` });
+      if (orderId) await logActivity(tx, { userId: u.id, action: "payment", entityType: "order", entityId: orderId, summary: paymentHeadline({ date, amount, method }) });
     });
     if (orderId) revalidatePath(`/orders/${orderId}`);
     revalidatePath("/payments");
