@@ -93,25 +93,57 @@ export default async function Home() {
       </div>
 
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-        <Card title="Сегодня" actions={u.role !== "VIEWER" && <Link href="/tasks/new" className="text-xs font-medium text-brand-700">+ задача</Link>} pad={false}>
-          {ap.length > 0 && (
-            <>
-              <div className="flex items-center justify-between border-b border-slate-100 bg-cyan-50 px-4 py-1.5 text-xs font-medium text-cyan-900">
-                <span>Ждут вашего согласования: {ap.length}</span>
-                <Link href="/tasks?who=approve" className="hover:underline">все →</Link>
-              </div>
-              <TaskList rows={ap.slice(0, 6)} showAssignee me={me} />
-              <div className="border-y border-slate-100 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500">Мои задачи на сегодня</div>
-            </>
-          )}
-          {todayTasks.length === 0 ? <Empty>На сегодня задач нет 👍</Empty> : <TaskList rows={todayTasks} me={me} />}
-          {otherTasks.length > 0 && (
-            <>
-              <div className="border-t border-slate-100 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500">Остальные открытые</div>
-              <TaskList rows={otherTasks.slice(0, 6)} me={me} />
-            </>
-          )}
-        </Card>
+        {/* слева: задачи, итоги месяца, последние действия; справа: поставки */}
+        <div className="space-y-4">
+          <Card title="Сегодня" actions={u.role !== "VIEWER" && <Link href="/tasks/new" className="text-xs font-medium text-brand-700">+ задача</Link>} pad={false}>
+            {ap.length > 0 && (
+              <>
+                <div className="flex items-center justify-between border-b border-slate-100 bg-cyan-50 px-4 py-1.5 text-xs font-medium text-cyan-900">
+                  <span>Ждут вашего согласования: {ap.length}</span>
+                  <Link href="/tasks?who=approve" className="hover:underline">все →</Link>
+                </div>
+                <TaskList rows={ap.slice(0, 6)} showAssignee me={me} />
+                <div className="border-y border-slate-100 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500">Мои задачи на сегодня</div>
+              </>
+            )}
+            {todayTasks.length === 0 ? <Empty>На сегодня задач нет 👍</Empty> : <TaskList rows={todayTasks} me={me} />}
+            {otherTasks.length > 0 && (
+              <>
+                <div className="border-t border-slate-100 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500">Остальные открытые</div>
+                <TaskList rows={otherTasks.slice(0, 6)} me={me} />
+              </>
+            )}
+          </Card>
+          <Card title={all ? "Отдел за текущий месяц" : "Моя статистика за месяц"}>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {[
+                ["Новых заказов", st.orders],
+                ["На сумму", fmtMoney(st.amount)],
+                ["Принято поставок", st.deliveries],
+                ["Задач выполнено", st.tasks_done],
+              ].map(([l, v]) => (
+                <div key={l as string}>
+                  <div className="text-xs text-slate-500">{l}</div>
+                  <div className="mt-0.5 text-lg font-semibold tabular-nums">{v}</div>
+                </div>
+              ))}
+            </div>
+            {st.tasks_overdue > 0 && <p className="mt-3 text-sm text-rose-600">Просроченных задач: {st.tasks_overdue}</p>}
+          </Card>
+          <Card title="Последние действия" actions={can(u, PERMS.auditView) && <Link href="/settings?tab=audit" className="text-xs font-medium text-brand-700">журнал →</Link>}>
+            {act.length === 0 ? <Empty>Пока пусто</Empty> : (
+              <ul className="space-y-2.5">
+                {act.map((a) => (
+                  <li key={a.id} className="text-sm">
+                    <div className="text-xs text-slate-500">{fmtDateTime(a.created_at)}{all && ` · ${a.who ?? "система"}`}</div>
+                    <LogEntry summary={a.summary} detail={actDetails.get(a.id)} href={(() => { const d = actDetails.get(a.id); return d?.orderId ? `/orders/${d.orderId}` : link(a.entity_type, a.entity_id); })()} />
+                    <ChangesView changes={a.changes} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
         <Card title="Поставки: просроченные и на неделю" actions={<Link href="/deliveries" className="text-xs font-medium text-brand-700">все →</Link>} pad={false}>
           {dl.length === 0 ? (
             <Empty>Ожидаемых поставок на неделю нет</Empty>
@@ -141,35 +173,6 @@ export default async function Home() {
                   </li>
                 );
               })}
-            </ul>
-          )}
-        </Card>
-        <Card title={all ? "Отдел за текущий месяц" : "Моя статистика за месяц"}>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {[
-              ["Новых заказов", st.orders],
-              ["На сумму", fmtMoney(st.amount)],
-              ["Принято поставок", st.deliveries],
-              ["Задач выполнено", st.tasks_done],
-            ].map(([l, v]) => (
-              <div key={l as string}>
-                <div className="text-xs text-slate-500">{l}</div>
-                <div className="mt-0.5 text-lg font-semibold tabular-nums">{v}</div>
-              </div>
-            ))}
-          </div>
-          {st.tasks_overdue > 0 && <p className="mt-3 text-sm text-rose-600">Просроченных задач: {st.tasks_overdue}</p>}
-        </Card>
-        <Card title="Последние действия" actions={can(u, PERMS.auditView) && <Link href="/settings?tab=audit" className="text-xs font-medium text-brand-700">журнал →</Link>}>
-          {act.length === 0 ? <Empty>Пока пусто</Empty> : (
-            <ul className="space-y-2.5">
-              {act.map((a) => (
-                <li key={a.id} className="text-sm">
-                  <div className="text-xs text-slate-500">{fmtDateTime(a.created_at)}{all && ` · ${a.who ?? "система"}`}</div>
-                  <LogEntry summary={a.summary} detail={actDetails.get(a.id)} href={(() => { const d = actDetails.get(a.id); return d?.orderId ? `/orders/${d.orderId}` : link(a.entity_type, a.entity_id); })()} />
-                  <ChangesView changes={a.changes} />
-                </li>
-              ))}
             </ul>
           )}
         </Card>
