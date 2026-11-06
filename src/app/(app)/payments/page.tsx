@@ -8,6 +8,7 @@ import { opt, selectOptions } from "@/lib/services/refs";
 import { fmtDate, fmtMoney, orderNo, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL } from "@/lib/format";
 import { Badge, Card, Empty, LinkButton, PageHeader, Stat, Table, Tabs, Td, Th } from "@/components/ui";
 import { ExportLink, FDate, FilterBar, FSelect, pageParams, Pagination, qp, SearchInput, type SP } from "@/components/list";
+import { ExpandableRow } from "@/components/client";
 
 export const metadata = { title: "Оплаты" };
 
@@ -32,14 +33,16 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         }
       />
       <Tabs base="/payments" current={tab} tabs={[{ key: "debts", label: "Задолженности по поставщикам" }, { key: "log", label: "Журнал платежей" }]} />
-      {tab === "debts" ? <Debts u={u} /> : <Log u={u} sp={sp} opts={opts} />}
+      {tab === "debts" ? <Debts u={u} sp={sp} /> : <Log u={u} sp={sp} opts={opts} />}
     </>
   );
 }
 
 type U = Awaited<ReturnType<typeof requireUser>>;
 
-async function Debts({ u }: { u: U }) {
+async function Debts({ u, sp }: { u: U; sp: SP }) {
+  // only=debt — только кому мы должны (плитка «Мы должны»), only=prepaid — у кого наши авансы
+  const only = qp(sp, "only");
   const adv = can(u, PERMS.ordersViewAll) ? sql`TRUE` : sql`EXISTS (SELECT 1 FROM supplier_buyers sb WHERE sb.supplier_id = p.supplier_id AND sb.user_id = ${u.id})`;
   const res = await db.execute(sql`
     WITH ${ORDER_STATS},
@@ -59,39 +62,141 @@ async function Debts({ u }: { u: U }) {
     debtShip: Number(r.delivered) - Number(r.paid) - Number(r.adv),
   }));
   const t = rows.reduce((a, r) => ({ amount: a.amount + Number(r.amount), delivered: a.delivered + Number(r.delivered), paid: a.paid + r.paidAll, debtShip: a.debtShip + Math.max(r.debtShip, 0), prepaid: a.prepaid + Math.max(-r.debtShip, 0) }), { amount: 0, delivered: 0, paid: 0, debtShip: 0, prepaid: 0 });
+  // по каким заказам набежал долг по отгрузке: поставлено − оплачено по каждому заказу
+  const ordRes = await db.execute(sql`
+    WITH ${ORDER_STATS}
+    SELECT o.id, o.number, o.supplier_id, COALESCE(o.invoice_date, o.order_date) AS dt, o.invoice_number,
+      COALESCE(os.delivered_amount,0) AS delivered, COALESCE(ps.paid,0) AS paid
+    FROM purchase_orders o LEFT JOIN order_stats os ON os.order_id = o.id LEFT JOIN pay_stats ps ON ps.order_id = o.id
+    WHERE o.deleted_at IS NULL AND o.status <> 'CANCELLED' AND ${orderScope(u)}
+      AND abs(COALESCE(os.delivered_amount,0) - COALESCE(ps.paid,0)) > 0.5
+    ORDER BY COALESCE(o.invoice_date, o.order_date), o.number`);
+  const bySup = new Map<string, DebtOrder[]>();
+  for (const r of ordRes.rows as { id: string; number: number; supplier_id: string; dt: string | null; invoice_number: string | null; delivered: string; paid: string }[]) {
+    const list = bySup.get(r.supplier_id) ?? [];
+    list.push({ id: r.id, number: r.number, dt: r.dt, invoice_number: r.invoice_number, delivered: Number(r.delivered), paid: Number(r.paid), diff: Number(r.delivered) - Number(r.paid) });
+    bySup.set(r.supplier_id, list);
+  }
+  const shown = only === "debt" ? rows.filter((r) => r.debtShip > 0.5) : only === "prepaid" ? rows.filter((r) => r.debtShip < -0.5).sort((a, b) => a.debtShip - b.debtShip) : rows;
+  const shownSum = shown.reduce((s, r) => s + r.debtShip, 0);
+  const cols = 7;
   return (
     <>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Stat label="Сумма заказов" value={fmtMoney(t.amount)} />
-        <Stat label="Поставлено на сумму" value={fmtMoney(t.delivered)} />
-        <Stat label="Оплачено" value={fmtMoney(t.paid)} sub={t.amount ? `${Math.round((t.paid / t.amount) * 100)}% от заказов` : undefined} />
-        <Stat label="Мы должны (по отгрузке)" value={fmtMoney(t.debtShip)} tone={t.debtShip > 0 ? "amber" : undefined} />
-        <Stat label="Авансы у поставщиков" value={fmtMoney(t.prepaid)} sub="оплачено, но ещё не поставлено" />
+        <Stat label="Сумма заказов" value={fmtMoney(t.amount)} href="/orders" />
+        <Stat label="Поставлено на сумму" value={fmtMoney(t.delivered)} href="/deliveries?tab=log" />
+        <Stat label="Оплачено" value={fmtMoney(t.paid)} sub={t.amount ? `${Math.round((t.paid / t.amount) * 100)}% от заказов` : undefined} href="/payments?tab=log" />
+        <Stat label="Мы должны (по отгрузке)" value={fmtMoney(t.debtShip)} tone={t.debtShip > 0 ? "amber" : undefined} sub="кому и по каким заказам →" href={only === "debt" ? "/payments" : "/payments?only=debt"} />
+        <Stat label="Авансы у поставщиков" value={fmtMoney(t.prepaid)} sub="оплачено, но ещё не поставлено" href={only === "prepaid" ? "/payments" : "/payments?only=prepaid"} />
       </div>
+      {only && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span>
+            {only === "debt" ? "Показаны только долги по отгрузке" : "Показаны только авансы у поставщиков"}: {shown.length} {plural(shown.length, "поставщик", "поставщика", "поставщиков")} на {fmtMoney(Math.abs(shownSum))}. Нажмите на поставщика — раскроются заказы.
+          </span>
+          <Link href="/payments" className="ml-auto font-medium text-brand-700 hover:underline">показать всех</Link>
+        </div>
+      )}
       <Card pad={false}>
         <Table>
           <thead>
             <tr><Th>Поставщик</Th><Th right>Сумма заказов</Th><Th right>Поставлено</Th><Th right>Оплачено</Th><Th right>% оплаты</Th><Th right>Долг по заказам</Th><Th right>Долг по отгрузке</Th></tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <Td><Link href={`/suppliers/${r.id}?tab=payments`} className="font-medium text-slate-900 hover:text-brand-700">{r.name}</Link>{Number(r.adv) > 0 && <div className="text-xs text-slate-500">в т.ч. авансы без счёта {fmtMoney(r.adv)}</div>}</Td>
-                <Td right>{fmtMoney(r.amount)}</Td>
-                <Td right>{fmtMoney(r.delivered)}</Td>
-                <Td right>{fmtMoney(r.paidAll)}</Td>
-                <Td right>{Number(r.amount) ? `${Math.round((r.paidAll / Number(r.amount)) * 100)}%` : "—"}</Td>
-                <Td right>{fmtMoney(r.debtOrder)}</Td>
-                <Td right className={r.debtShip > 0.5 ? "font-medium text-amber-700" : r.debtShip < -0.5 ? "text-emerald-700" : ""}>{fmtMoney(r.debtShip)}</Td>
-              </tr>
-            ))}
+            {shown.length === 0 && (
+              <tr><td colSpan={cols} className="px-3 py-6 text-center text-sm text-slate-500">{only === "debt" ? "Долгов по отгрузке нет" : "Авансов у поставщиков нет"}</td></tr>
+            )}
+            {shown.map((r) => {
+              const cells = [
+                <>
+                  <Link href={`/suppliers/${r.id}?tab=payments`} className="font-medium text-slate-900 hover:text-brand-700">{r.name}</Link>
+                  {Number(r.adv) > 0 && <div className="ml-5 text-xs text-slate-500">в т.ч. авансы без счёта {fmtMoney(r.adv)}</div>}
+                </>,
+                fmtMoney(r.amount),
+                fmtMoney(r.delivered),
+                fmtMoney(r.paidAll),
+                Number(r.amount) ? `${Math.round((r.paidAll / Number(r.amount)) * 100)}%` : "—",
+                fmtMoney(r.debtOrder),
+                <span className={r.debtShip > 0.5 ? "font-medium text-amber-700" : r.debtShip < -0.5 ? "text-emerald-700" : ""}>{fmtMoney(r.debtShip)}</span>,
+              ];
+              const ords = bySup.get(r.id) ?? [];
+              if (!ords.length && !(Number(r.adv) > 0))
+                return (
+                  <tr key={r.id}>
+                    {cells.map((c, i) => (
+                      <Td key={i} right={i > 0}>{i === 0 ? <span className="ml-[18px] inline-block">{c}</span> : c}</Td>
+                    ))}
+                  </tr>
+                );
+              return <ExpandableRow key={r.id} cols={cols} cells={cells} detail={<DebtBreakdown orders={ords} adv={Number(r.adv)} total={r.debtShip} />} />;
+            })}
           </tbody>
         </Table>
       </Card>
       <p className="mt-2 text-xs text-slate-500">
-        Долг по заказам = сумма заказов − оплаты (сколько ещё заплатить по счетам). Долг по отгрузке = сумма фактически поставленного − оплаты (положительный — мы должны за полученный товар, отрицательный — аванс у поставщика).
+        Долг по заказам = сумма заказов − оплаты (сколько ещё заплатить по счетам). Долг по отгрузке = сумма фактически поставленного − оплаты (положительный — мы должны за полученный товар, отрицательный — аванс у поставщика). Нажмите на поставщика, чтобы увидеть, по каким заказам этот долг.
       </p>
     </>
+  );
+}
+
+type DebtOrder = { id: string; number: number; dt: string | null; invoice_number: string | null; delivered: number; paid: number; diff: number };
+
+const plural = (n: number, one: string, few: string, many: string) => {
+  const a = n % 100;
+  const b = n % 10;
+  return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
+};
+
+/** Долг поставщика по отгрузке по заказам: сначала где мы должны, потом переплаты; авансы без счёта вычитаются */
+function DebtBreakdown({ orders, adv, total }: { orders: DebtOrder[]; adv: number; total: number }) {
+  const owe = orders.filter((o) => o.diff > 0);
+  const over = orders.filter((o) => o.diff < 0);
+  const row = (o: DebtOrder) => (
+    <tr key={o.id} className="border-b border-slate-200">
+      <td className="py-1 pr-3">
+        <Link href={`/orders/${o.id}`} className="font-medium text-brand-700 hover:underline">{orderNo(o.number)}</Link>
+        {o.invoice_number && <span className="ml-1 text-slate-500">счёт {o.invoice_number}</span>}
+      </td>
+      <td className="py-1 pr-3 text-slate-500">{fmtDate(o.dt)}</td>
+      <td className="py-1 pr-3 text-right">{fmtMoney(o.delivered)}</td>
+      <td className="py-1 pr-3 text-right">{fmtMoney(o.paid)}</td>
+      <td className={`py-1 text-right font-medium ${o.diff > 0 ? "text-amber-700" : "text-emerald-700"}`}>{fmtMoney(o.diff)}</td>
+    </tr>
+  );
+  return (
+    <table className="w-full max-w-3xl text-xs tabular-nums">
+      <thead>
+        <tr className="text-left text-slate-500">
+          <th className="py-1 pr-3 font-medium">Заказ</th>
+          <th className="py-1 pr-3 font-medium">Дата счёта</th>
+          <th className="py-1 pr-3 text-right font-medium">Поставлено</th>
+          <th className="py-1 pr-3 text-right font-medium">Оплачено</th>
+          <th className="py-1 text-right font-medium">Долг</th>
+        </tr>
+      </thead>
+      <tbody>
+        {owe.map(row)}
+        {over.length > 0 && (
+          <tr>
+            <td colSpan={5} className="pt-2 text-slate-500">Оплачено больше, чем поставлено (аванс по заказу):</td>
+          </tr>
+        )}
+        {over.map(row)}
+        {adv > 0 && (
+          <tr className="border-b border-slate-200">
+            <td colSpan={4} className="py-1 text-slate-600">Авансы без счёта</td>
+            <td className="py-1 text-right font-medium text-emerald-700">{fmtMoney(-adv)}</td>
+          </tr>
+        )}
+      </tbody>
+      <tfoot>
+        <tr className="font-semibold">
+          <td colSpan={4} className="pt-1.5">{total >= 0 ? "Итого мы должны" : "Итого аванс у поставщика"}</td>
+          <td className="pt-1.5 text-right">{fmtMoney(Math.abs(total))}</td>
+        </tr>
+      </tfoot>
+    </table>
   );
 }
 

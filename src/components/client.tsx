@@ -314,3 +314,30 @@ export function TaskStepButtons({ action, taskId, steps, compact }: { action: Fo
     </ActionForm>
   );
 }
+
+/**
+ * Строка таблицы, которая по нажатию раскрывает под собой подробности на всю ширину (например, долг поставщика по заказам).
+ * cells — ячейки строки; первая получает стрелку ▸/▾. detail — содержимое раскрытой части.
+ */
+export function ExpandableRow({ cells, detail, cols, defaultOpen = false }: { cells: ReactNode[]; detail: ReactNode; cols: number; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <>
+      <tr className={cn("cursor-pointer hover:bg-slate-50", open && "bg-slate-50")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a")) setOpen((v) => !v); }} aria-expanded={open}>
+        {cells.map((c, i) => (
+          <td key={i} className={cn("border-b border-slate-100 px-3 py-2 align-top text-slate-700", i > 0 && "whitespace-nowrap text-right tabular-nums")}>
+            {i === 0 && <span className={cn("mr-1.5 inline-block text-slate-400 transition", open && "rotate-90")}>▸</span>}
+            {c}
+          </td>
+        ))}
+      </tr>
+      {open && (
+        <tr>
+          <td colSpan={cols} className="border-b border-slate-200 bg-slate-50 px-3 pb-3 pt-1">
+            {detail}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
