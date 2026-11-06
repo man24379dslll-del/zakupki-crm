@@ -341,3 +341,12 @@ export function ExpandableRow({ cells, detail, cols, defaultOpen = false }: { ce
     </>
   );
 }
+
+/** Кнопка «Печать / PDF»: открывает окно печати браузера (там же «Сохранить как PDF») */
+export function PrintButton({ children = "Печать / PDF" }: { children?: ReactNode }) {
+  return (
+    <button type="button" onClick={() => window.print()} className={btnClass("secondary", "md")}>
+      {children}
+    </button>
+  );
+}

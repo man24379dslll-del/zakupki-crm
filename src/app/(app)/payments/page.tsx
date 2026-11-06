@@ -128,7 +128,7 @@ async function Debts({ u, sp }: { u: U; sp: SP }) {
                     ))}
                   </tr>
                 );
-              return <ExpandableRow key={r.id} cols={cols} cells={cells} detail={<DebtBreakdown orders={ords} adv={Number(r.adv)} total={r.debtShip} />} />;
+              return <ExpandableRow key={r.id} cols={cols} cells={cells} detail={<DebtBreakdown supplierId={r.id} orders={ords} adv={Number(r.adv)} total={r.debtShip} />} />;
             })}
           </tbody>
         </Table>
@@ -149,7 +149,7 @@ const plural = (n: number, one: string, few: string, many: string) => {
 };
 
 /** Долг поставщика по отгрузке по заказам: сначала где мы должны, потом переплаты; авансы без счёта вычитаются */
-function DebtBreakdown({ orders, adv, total }: { orders: DebtOrder[]; adv: number; total: number }) {
+function DebtBreakdown({ supplierId, orders, adv, total }: { supplierId: string; orders: DebtOrder[]; adv: number; total: number }) {
   const owe = orders.filter((o) => o.diff > 0);
   const over = orders.filter((o) => o.diff < 0);
   const row = (o: DebtOrder) => (
@@ -165,6 +165,7 @@ function DebtBreakdown({ orders, adv, total }: { orders: DebtOrder[]; adv: numbe
     </tr>
   );
   return (
+    <>
     <table className="w-full max-w-3xl text-xs tabular-nums">
       <thead>
         <tr className="text-left text-slate-500">
@@ -197,6 +198,8 @@ function DebtBreakdown({ orders, adv, total }: { orders: DebtOrder[]; adv: numbe
         </tr>
       </tfoot>
     </table>
+    <Link href={`/suppliers/${supplierId}/act`} className="mt-2 inline-block text-xs font-medium text-brand-700 hover:underline">Акт сверки с поставщиком →</Link>
+    </>
   );
 }
 

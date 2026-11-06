@@ -64,9 +64,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const canEdit = can(u, PERMS.ordersEdit);
   return (
-    <div className="lg:pl-60">
-      <aside className="fixed inset-y-0 left-0 hidden w-60 border-r border-slate-200 bg-white lg:block">{sidebar}</aside>
-      <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur sm:px-6">
+    <div className="lg:pl-60 print:pl-0">
+      <aside className="fixed inset-y-0 left-0 hidden w-60 border-r border-slate-200 bg-white lg:block print:hidden">{sidebar}</aside>
+      <header className="sticky top-0 z-30 flex items-center print:hidden gap-2 border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur sm:px-6">
         <MobileNavToggle>{sidebar}</MobileNavToggle>
         <form action="/search" className="min-w-0 flex-1">
           <input name="q" placeholder="Поиск: № заказа, счёт, поставщик, товар" className="w-full max-w-md rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm focus:border-brand-500 focus:bg-white focus:outline-none" />
@@ -95,7 +95,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {c.notif > 0 && <span className="absolute right-0.5 top-0.5 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[10px] font-semibold leading-4 text-white">{c.notif}</span>}
         </Link>
       </header>
-      <main className="mx-auto max-w-[1400px] px-3 py-5 sm:px-6">{children}</main>
+      <main className="mx-auto max-w-[1400px] px-3 py-5 sm:px-6 print:max-w-none print:p-0">{children}</main>
     </div>
   );
 }

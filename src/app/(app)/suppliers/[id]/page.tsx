@@ -59,11 +59,14 @@ export default async function SupplierPage({ params, searchParams }: { params: P
         }
         subtitle={[s.legalName, s.inn && `ИНН ${s.inn}`, buyers.length ? `Ответственные: ${buyers.map((b) => b.name).join(", ")}` : "Ответственный не назначен"].filter(Boolean).join(" · ")}
         actions={
-          can(u, PERMS.ordersEdit) ? (
-            <LinkButton href={`/orders/new?supplier=${id}`} variant="primary">
-              + Заказ
-            </LinkButton>
-          ) : undefined
+          <>
+            <LinkButton href={`/suppliers/${id}/act`}>Акт сверки</LinkButton>
+            {can(u, PERMS.ordersEdit) && (
+              <LinkButton href={`/orders/new?supplier=${id}`} variant="primary">
+                + Заказ
+              </LinkButton>
+            )}
+          </>
         }
       />
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">

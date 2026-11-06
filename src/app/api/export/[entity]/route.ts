@@ -93,5 +93,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ entity: 
     const buf = await buildXlsx([{ name: "По поставщикам", columns: cols, rows: by("supplier_name") as never }, { name: "По закупщикам", columns: cols, rows: by("buyer_name") as never }]);
     return xlsxResponse(buf, `Аналитика ${d}.xlsx`);
   }
+  if (entity === "act") {
+    // акт сверки с поставщиком: ?supplier=&from=&to=&legal=(id|all)
+    const { loadAct, defaultLegal } = await import("@/lib/services/recon");
+    const { actXlsx } = await import("@/lib/recon-xlsx");
+    const sup = q("supplier");
+    if (!/^[0-9a-f-]{36}$/.test(sup)) return new Response("Не указан поставщик", { status: 400 });
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(q("from")) ? q("from") : `${d.slice(0, 4)}-01-01`;
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(q("to")) ? q("to") : d;
+    const legal = q("legal") === "all" ? null : q("legal") || (await defaultLegal(sup));
+    const act = await loadAct(u, sup, legal, from, to);
+    if (!act) return new Response("Поставщик не найден", { status: 404 });
+    const name = (act.supplier.legalName || act.supplier.name).replace(/[\/:*?"<>|]/g, "");
+    return xlsxResponse(await actXlsx(act), `Акт сверки ${name} ${from}_${to}.xlsx`);
+  }
   return new Response("Неизвестный раздел", { status: 404 });
 }
