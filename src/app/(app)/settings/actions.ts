@@ -133,7 +133,7 @@ export async function restoreRecordAction(_: ActionResult, fd: FormData): Promis
     const u = await requirePerm(PERMS.deleteRecords);
     const type = String(fd.get("type"));
     const id = String(fd.get("id"));
-    const t = { order: schema.purchaseOrders, supplier: schema.suppliers, delivery: schema.deliveries, payment: schema.payments, user: schema.users }[type];
+    const t = { order: schema.purchaseOrders, supplier: schema.suppliers, delivery: schema.deliveries, payment: schema.payments, user: schema.users, document: schema.documents, task: schema.tasks }[type];
     if (!t) throw new UserError("Неверный тип");
     if (type === "user" && !can(u, PERMS.usersManage)) throw new UserError("Восстановить сотрудника может тот, у кого есть право «Управлять пользователями»");
     await db.update(t).set({ deletedAt: null } as never).where(eq(t.id, id));
@@ -146,6 +146,31 @@ export async function restoreRecordAction(_: ActionResult, fd: FormData): Promis
     revalidatePath("/settings");
     if (type === "user") revalidatePath("/users");
     return { ok: type === "user" ? "Сотрудник восстановлен — он заблокирован, разблокируйте его в разделе «Пользователи»" : "Восстановлено" };
+  });
+}
+
+// ---------- отмена действий сотрудника за день ----------
+
+/** Мягко удаляет всё, что сотрудник создал в этот день (заказы, поставки, оплаты, документы, задачи), и пересчитывает статусы */
+export async function undoUserDayAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return safe(async () => {
+    const u = await requirePerm(PERMS.deleteRecords);
+    if (!can(u, PERMS.auditView)) throw new UserError("Нужно право «Смотреть журнал действий»");
+    const userId = String(fd.get("userId"));
+    const day = String(fd.get("day"));
+    const { undoPlan, applyUndo, planSize } = await import("@/lib/services/undo");
+    const n = await db.transaction(async (tx) => {
+      const plan = await undoPlan(userId, day, tx);
+      if (!plan) throw new UserError("Сотрудник или дата не найдены");
+      const size = planSize(plan);
+      if (!size) throw new UserError("Отменять нечего — за этот день у сотрудника нет созданных записей");
+      await applyUndo(tx, plan, u.id);
+      return size;
+    });
+    revalidatePath("/settings");
+    revalidatePath("/orders");
+    revalidatePath("/");
+    return { ok: `Готово: удалено записей — ${n}. Статусы заказов пересчитаны. Вернуть можно в Настройки → «Удалённые».` };
   });
 }
 

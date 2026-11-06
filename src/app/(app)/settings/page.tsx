@@ -12,7 +12,8 @@ import { LogEntry } from "@/components/log-entry";
 import { loadLogDetails } from "@/lib/services/log-details";
 import { Combobox } from "@/components/combobox";
 import { FDate, FilterBar, FSelect, pageParams, Pagination, qp, SearchInput, type SP } from "@/components/list";
-import { mergeRefAction, restoreRecordAction, rollbackImportAction, saveRefAction, saveSettingsAction, toggleRefAction, uploadImportAction } from "./actions";
+import { mergeRefAction, restoreRecordAction, rollbackImportAction, saveRefAction, saveSettingsAction, toggleRefAction, undoUserDayAction, uploadImportAction } from "./actions";
+import { planSize, undoPlan } from "@/lib/services/undo";
 
 export const metadata = { title: "Настройки" };
 
@@ -34,7 +35,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <Tabs base="/settings" current={tab} tabs={tabs} />
       {tab === "import" && <ImportTab />}
       {tab === "refs" && <RefsTab />}
-      {tab === "audit" && <AuditTab sp={sp} />}
+      {tab === "audit" && <AuditTab sp={sp} canUndo={can(u, PERMS.deleteRecords)} />}
       {tab === "deleted" && <DeletedTab />}
       {tab === "params" && <ParamsTab />}
     </>
@@ -83,7 +84,7 @@ async function ImportTab() {
 const ENTITY_LABEL: Record<string, string> = { legal: "Юрлицо", direction: "Направление", contract: "Договор", order: "Заказ", delivery: "Поставка", payment: "Оплата", supplier: "Поставщик", product: "Товар", task: "Задача", user: "Пользователь", import: "Импорт", settings: "Настройки" };
 const ACTION_LABEL: Record<string, string> = { create: "создание", update: "изменение", delete: "удаление", status: "статус", login: "вход", import: "импорт", rollback: "откат", restore: "восстановление", merge: "объединение", upload: "файл", delivery: "поставка", payment: "оплата" };
 
-async function AuditTab({ sp }: { sp: SP }) {
+async function AuditTab({ sp, canUndo }: { sp: SP; canUndo: boolean }) {
   const { page, limit, offset } = pageParams(sp, 100);
   const w = [sql`TRUE`];
   const user = qp(sp, "user");
@@ -115,6 +116,7 @@ async function AuditTab({ sp }: { sp: SP }) {
         <FDate name="from" sp={sp} label="с" />
         <FDate name="to" sp={sp} label="по" />
       </FilterBar>
+      {user && canUndo && <UndoPanel userId={user} sp={sp} />}
       <Card pad={false}>
         {rows.length === 0 ? <Empty>Записей нет</Empty> : (
           <Table>
@@ -146,6 +148,8 @@ async function DeletedTab() {
     UNION ALL SELECT 'supplier', id, deleted_at, 'Поставщик ' || name FROM suppliers WHERE deleted_at IS NOT NULL
     UNION ALL SELECT 'delivery', d.id, d.deleted_at, 'Поставка от ' || to_char(d.date, 'DD.MM.YYYY') || ' по заказу З-' || lpad(o.number::text, 5, '0') FROM deliveries d JOIN purchase_orders o ON o.id = d.order_id WHERE d.deleted_at IS NOT NULL
     UNION ALL SELECT 'payment', p.id, p.deleted_at, 'Оплата ' || p.amount || ' ₽ от ' || COALESCE(to_char(p.date, 'DD.MM.YYYY'), '—') FROM payments p WHERE p.deleted_at IS NOT NULL
+    UNION ALL SELECT 'document', d.id, d.deleted_at, 'Документ «' || d.file_name || '»' || COALESCE(' · заказ З-' || lpad(o.number::text, 5, '0'), '') FROM documents d LEFT JOIN purchase_orders o ON d.entity_type = 'order' AND o.id = d.entity_id WHERE d.deleted_at IS NOT NULL
+    UNION ALL SELECT 'task', id, deleted_at, 'Задача «' || title || '»' FROM tasks WHERE deleted_at IS NOT NULL
     UNION ALL SELECT 'user', id, deleted_at, 'Сотрудник ' || name || ' (логин ' || login || ') — восстановится заблокированным' FROM users WHERE deleted_at IS NOT NULL
     ORDER BY 3 DESC LIMIT 200`);
   const rows = res.rows as { type: string; id: string; deleted_at: string; label: string }[];
@@ -306,5 +310,62 @@ function MergeForm({ kind, id, options }: { kind: "legal" | "direction"; id: str
       <Combobox name="target" options={options} placeholder="Объединить с…" className="w-48" />
       <SubmitButton size="sm" variant="secondary">Объединить</SubmitButton>
     </ActionForm>
+  );
+}
+
+/** «Отменить действия сотрудника за день»: выбор дня → список того, что будет удалено → подтверждение */
+async function UndoPanel({ userId, sp }: { userId: string; sp: SP }) {
+  const day = qp(sp, "undo");
+  const [last] = (await db.execute(sql`SELECT to_char(max(created_at) AT TIME ZONE 'Europe/Moscow', 'YYYY-MM-DD') AS d FROM activity_logs WHERE user_id = ${userId} AND action <> 'login'`)).rows as { d: string | null }[];
+  const plan = day ? await undoPlan(userId, day) : null;
+  const n = plan ? planSize(plan) : 0;
+  const section = (title: string, items: { id: string; label: string }[]) =>
+    items.length > 0 && (
+      <div>
+        <div className="mb-1 text-xs font-semibold text-slate-600">{title}: {items.length}</div>
+        <ul className="mb-3 list-disc space-y-0.5 pl-5 text-sm text-slate-800">
+          {items.map((x) => <li key={x.id}>{x.label}</li>)}
+        </ul>
+      </div>
+    );
+  return (
+    <Card title="Отменить действия сотрудника за день" className="mb-4">
+      <form className="flex flex-wrap items-end gap-2" action="/settings">
+        <input type="hidden" name="tab" value="audit" />
+        <input type="hidden" name="user" value={userId} />
+        <Field label="День">
+          <Input type="date" name="undo" defaultValue={day || last?.d || ""} required className="w-44" />
+        </Field>
+        <button type="submit" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Показать, что будет отменено</button>
+      </form>
+      <p className="mt-2 text-xs text-slate-500">Будут удалены заказы, поставки, оплаты, документы и задачи, которые сотрудник создал в этот день. Удаление мягкое — всё можно вернуть в «Удалённых». Статусы заказов и долги пересчитаются.</p>
+      {day && plan && (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          {n === 0 ? (
+            <p className="text-sm text-slate-600">За {fmtDate(day)} у сотрудника {plan.user.name} нет созданных записей — отменять нечего.</p>
+          ) : (
+            <>
+              <p className="mb-3 text-sm font-medium text-slate-900">{plan.user.name}, {fmtDate(day)} — будет удалено записей: {n}</p>
+              {section("Заказы (удаляются целиком)", plan.orders)}
+              {section("Поставки", plan.deliveries.map((d) => ({ id: d.id, label: `${d.order}: ${d.label}` })))}
+              {section("Оплаты", plan.payments)}
+              {section("Документы", plan.documents)}
+              {section("Задачи", plan.tasks)}
+              <ConfirmButton action={undoUserDayAction} question={`Удалить ${n} записей сотрудника ${plan.user.name} за ${fmtDate(day)}? Вернуть можно в «Удалённых».`} hidden={{ userId, day }}>
+                Отменить действия за {fmtDate(day)}
+              </ConfirmButton>
+            </>
+          )}
+          {plan.edits.length > 0 && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="mb-1 text-xs font-semibold text-amber-900">Правки в существующих записях не отменяются автоматически — проверьте их вручную ({plan.edits.length}):</div>
+              <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-900">
+                {plan.edits.map((e, i) => <li key={i}>{e.at} — {e.summary}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
