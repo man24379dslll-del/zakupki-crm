@@ -54,7 +54,7 @@ export default async function HelpPage({ searchParams }: { searchParams: Promise
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
           <nav className="lg:sticky lg:top-16 lg:self-start">
-            <details open className="rounded-xl border border-slate-200 bg-white p-3 text-sm lg:[&>summary]:hidden">
+            <details open className="rounded-xl border border-slate-200 bg-white p-3 text-sm lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto lg:overscroll-contain lg:[&>summary]:hidden">
               <summary className="cursor-pointer font-medium text-slate-700">Оглавление</summary>
               {groups.map(({ g, items }) => (
                 <div key={g} className="mt-2 first:mt-0">
