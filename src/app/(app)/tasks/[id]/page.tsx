@@ -52,7 +52,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
   const dueLocal = due ? new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow", dateStyle: "short", timeStyle: "short" }).format(due).split(" ") : ["", ""];
   return (
     <>
-      <PageHeader
+      <PageHeader help={t.kind === "purchase" ? "purchase-tasks" : "tasks"}
         back={{ href: "/tasks", label: "Задачи" }}
         title={<span className="flex flex-wrap items-center gap-2">{t.title} <Badge tone={TASK_STATUS_TONE[status]}>{TASK_STATUS_LABEL[status]}</Badge>{overdue && <Badge tone="red">просрочена</Badge>}</span>}
         subtitle={`Исполнитель: ${t.assignee} · Поставил: ${t.creator} · ${fmtDateTime(t.created_at)}`}

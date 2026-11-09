@@ -106,7 +106,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <PageHeader
+      <PageHeader help={"calendar"}
         title="Календарь поставок"
         subtitle="Что и в каком количестве мы ждём по плановым датам. В клетке — недопоставленный остаток."
         actions={

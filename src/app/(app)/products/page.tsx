@@ -37,7 +37,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const rows = res.rows as { id: string; name: string; sku: string | null; category: string | null; unit: string; is_active: boolean; suppliers: string | null; supplier_count: number; last_delivery: string | null; last_price: string | null; total: number }[];
   return (
     <>
-      <PageHeader
+      <PageHeader help={"products"}
         title="Товары"
         subtitle={`Средневзвешенная цена — за период ${fmtDate(avg.window.from)} — ${fmtDate(avg.window.to)} по фактическим поставкам`}
         actions={

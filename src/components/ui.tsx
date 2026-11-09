@@ -5,7 +5,8 @@ import { Combobox, type ComboOption } from "./combobox";
 
 export const cn = clsx;
 
-export function PageHeader({ title, subtitle, actions, back }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; back?: { href: string; label: string } }) {
+/** help — id раздела инструкции (src/lib/help.ts): справа появляется ссылка «Как это работает?» */
+export function PageHeader({ title, subtitle, actions, back, help }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; back?: { href: string; label: string }; help?: string }) {
   return (
     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
@@ -17,7 +18,16 @@ export function PageHeader({ title, subtitle, actions, back }: { title: ReactNod
         <h1 className="truncate text-xl font-semibold text-slate-900 sm:text-2xl">{title}</h1>
         {subtitle && <div className="mt-1 text-sm text-slate-500">{subtitle}</div>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {(actions || help) && (
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          {help && (
+            <Link href={`/help#${help}`} className="text-xs font-medium text-brand-700 hover:underline" title="Открыть раздел инструкции">
+              Как это работает?
+            </Link>
+          )}
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

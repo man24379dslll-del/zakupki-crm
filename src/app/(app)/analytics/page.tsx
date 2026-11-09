@@ -104,7 +104,7 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <PageHeader title="Аналитика отдела закупок" subtitle={`Заказы с ${from.split("-").reverse().join(".")} по ${to.split("-").reverse().join(".")}`} actions={<ExportLink entity="analytics" sp={sp} />} />
+      <PageHeader help={"analytics"} title="Аналитика отдела закупок" subtitle={`Заказы с ${from.split("-").reverse().join(".")} по ${to.split("-").reverse().join(".")}`} actions={<ExportLink entity="analytics" sp={sp} />} />
       <FilterBar base="/analytics" sp={sp}>
         <FDate name="from" sp={sp} label="с" />
         <FDate name="to" sp={sp} label="по" />

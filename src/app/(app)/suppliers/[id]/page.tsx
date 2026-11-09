@@ -47,7 +47,7 @@ export default async function SupplierPage({ params, searchParams }: { params: P
 
   return (
     <>
-      <PageHeader
+      <PageHeader help={"suppliers"}
         back={{ href: "/suppliers", label: "Поставщики" }}
         title={
           <span className="flex flex-wrap items-center gap-2">

@@ -42,7 +42,7 @@ export default async function ActPage({ params, searchParams }: { params: Promis
   return (
     <>
       <div className="print:hidden">
-        <PageHeader back={{ href: `/suppliers/${id}?tab=payments`, label: act.supplier.name }} title="Акт сверки взаимных расчётов" subtitle="По нашим данным, с товарами в каждой поставке. Половину поставщика он заполняет сам." />
+        <PageHeader help={"recon-act"} back={{ href: `/suppliers/${id}?tab=payments`, label: act.supplier.name }} title="Акт сверки взаимных расчётов" subtitle="По нашим данным, с товарами в каждой поставке. Половину поставщика он заполняет сам." />
         <Card className="mb-4">
           <form className="flex flex-wrap items-end gap-3" action={`/suppliers/${id}/act`}>
             <Field label="Период с"><Input type="date" name="from" defaultValue={from} className="w-40" /></Field>

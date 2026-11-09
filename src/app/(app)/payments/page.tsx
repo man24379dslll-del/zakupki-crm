@@ -19,7 +19,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const opts = await selectOptions();
   return (
     <>
-      <PageHeader
+      <PageHeader help={"payments"}
         title="Оплаты и задолженности"
         actions={
           <>

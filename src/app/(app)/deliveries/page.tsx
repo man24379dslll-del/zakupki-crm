@@ -19,7 +19,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
   const all = can(u, PERMS.ordersViewAll);
   return (
     <>
-      <PageHeader title="Поставки" subtitle="Ожидаемые поставки и журнал фактических поступлений" actions={tab === "log" ? <ExportLink entity="deliveries" sp={sp} /> : undefined} />
+      <PageHeader help={"deliveries"} title="Поставки" subtitle="Ожидаемые поставки и журнал фактических поступлений" actions={tab === "log" ? <ExportLink entity="deliveries" sp={sp} /> : undefined} />
       <Tabs
         base="/deliveries"
         current={tab}

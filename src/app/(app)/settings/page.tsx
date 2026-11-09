@@ -31,7 +31,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const tab = tabs.some((t) => t.key === qp(sp, "tab")) ? qp(sp, "tab") : tabs[0].key;
   return (
     <>
-      <PageHeader title="Настройки" />
+      <PageHeader help={tab === "audit" ? "audit" : tab === "deleted" ? "deleted" : tab === "import" ? "import" : "refs"} title="Настройки" />
       <Tabs base="/settings" current={tab} tabs={tabs} />
       {tab === "import" && <ImportTab />}
       {tab === "refs" && <RefsTab />}

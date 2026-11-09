@@ -39,7 +39,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const opts = all ? await selectOptions() : null;
   return (
     <>
-      <PageHeader title="Задачи" actions={u.role !== "VIEWER" && <LinkButton href="/tasks/new" variant="primary">+ Задача</LinkButton>} />
+      <PageHeader help={"tasks"} title="Задачи" actions={u.role !== "VIEWER" && <LinkButton href="/tasks/new" variant="primary">+ Задача</LinkButton>} />
       <FilterBar base="/tasks" sp={sp}>
         <SearchInput sp={sp} />
         <FSelect name="who" sp={sp} placeholder={all ? "Все сотрудники" : "Мои и поставленные мной"} options={[{ value: "me", label: "Мне" }, { value: "byme", label: "Поставленные мной" }, { value: "approve", label: "Ждут моего согласования" }, ...(opts ? opt(opts.buyers) : [])]} />

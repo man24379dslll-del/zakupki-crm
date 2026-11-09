@@ -18,7 +18,7 @@ export default async function NewTask({ searchParams }: { searchParams: Promise<
   const orders = await listOrders(u, { where: [sql`o.status IN ('DRAFT','SENT','CONFIRMED','AWAITING','PARTIAL')`], limit: 300 });
   return (
     <>
-      <PageHeader title="Новая задача" back={{ href: "/tasks", label: "Задачи" }} />
+      <PageHeader help={can(u, PERMS.tasksAssign) ? "tasks-assign" : "tasks"} title="Новая задача" back={{ href: "/tasks", label: "Задачи" }} />
       <Card>
         <ActionForm action={createTaskAction} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <TaskKindFields products={o.products} canPurchase={can(u, PERMS.tasksAssign)} defaultKind={qp(sp, "kind") === "purchase" ? "purchase" : "general"} />

@@ -2,9 +2,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
-import { Home, ClipboardList, Truck, Building2, Package, Wallet, CheckSquare, BarChart3, Users, Settings } from "lucide-react";
+import { Home, ClipboardList, Truck, Building2, Package, Wallet, CheckSquare, BarChart3, Users, Settings, BookOpen } from "lucide-react";
 
-const icons = { home: Home, orders: ClipboardList, truck: Truck, building: Building2, box: Package, wallet: Wallet, check: CheckSquare, chart: BarChart3, users: Users, settings: Settings };
+const icons = { home: Home, orders: ClipboardList, truck: Truck, building: Building2, box: Package, wallet: Wallet, check: CheckSquare, chart: BarChart3, users: Users, settings: Settings, book: BookOpen };
 export type NavItem = { href: string; label: string; icon: keyof typeof icons; badge?: number; badgeTone?: "red" };
 
 export function NavLinks({ items }: { items: NavItem[] }) {

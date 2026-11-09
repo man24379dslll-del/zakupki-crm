@@ -46,7 +46,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
 
   return (
     <>
-      <PageHeader
+      <PageHeader help={"products"}
         back={{ href: "/products", label: "Товары" }}
         title={p.name}
         subtitle={[p.sku && `арт. ${p.sku}`, p.category, `ед. изм.: ${p.unit}`, !p.isActive && "неактивен"].filter(Boolean).join(" · ")}

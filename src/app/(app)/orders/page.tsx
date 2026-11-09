@@ -30,7 +30,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <PageHeader
+      <PageHeader help={"orders"}
         title="Заказы"
         subtitle={all ? "Все заказы отдела" : "Ваши заказы"}
         actions={

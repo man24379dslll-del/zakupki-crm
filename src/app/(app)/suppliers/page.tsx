@@ -38,7 +38,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
   const d = today();
   return (
     <>
-      <PageHeader
+      <PageHeader help={"suppliers"}
         title="Поставщики"
         actions={
           <>

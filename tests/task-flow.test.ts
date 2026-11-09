@@ -73,3 +73,18 @@ test("задача «Закупка»: выполнение по несколь�
   assert.equal(c.complete, false);
   assert.equal(purchaseCoverage(items.slice(0, 1), [{ productId: "a", name: "Адмирал", unit: "шт", qty: 10000, price: 120 }]).complete, true);
 });
+
+test("инструкция: разделы по правам", async () => {
+  const { visibleHelp, HELP } = await import("../src/lib/help");
+  const { ROLE_DEFAULTS } = await import("../src/lib/permissions");
+  const ids = (role: "ADMIN" | "BUYER" | "VIEWER", perms = ROLE_DEFAULTS[role].perms as string[]) => visibleHelp(new Set(perms), role).map((s) => s.id);
+  assert.equal(ids("ADMIN").length, HELP.length, "руководитель видит всё");
+  const buyer = ids("BUYER");
+  for (const id of ["start", "order-new", "delivery", "payment-new", "tasks", "purchase-tasks", "recon-act"]) assert.ok(buyer.includes(id), `закупщик видит «${id}»`);
+  for (const id of ["users", "analytics", "audit", "import", "tasks-assign", "deleted"]) assert.ok(!buyer.includes(id), `закупщик не видит «${id}»`);
+  const viewer = ids("VIEWER");
+  for (const id of ["order-new", "delivery", "tasks", "purchase-tasks", "payment-new"]) assert.ok(!viewer.includes(id), `наблюдатель не видит «${id}»`);
+  assert.ok(viewer.includes("orders") && viewer.includes("recon-act"));
+  assert.ok(ids("BUYER", [...ROLE_DEFAULTS.BUYER.perms, "stats.viewAll"]).includes("analytics"), "выдали право — появился раздел");
+  for (const s of HELP) for (const b of s.body) if (typeof b === "object" && "img" in b) assert.match(b.img, /^[a-z-]+$/);
+});

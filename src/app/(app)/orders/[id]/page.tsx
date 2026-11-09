@@ -102,7 +102,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const byTasks = (await db.execute(sql`SELECT t.id, t.title, t.status FROM task_orders x JOIN tasks t ON t.id = x.task_id WHERE x.order_id = ${o.id} AND t.deleted_at IS NULL`)).rows as { id: string; title: string; status: string }[];
   return (
     <>
-      <PageHeader
+      <PageHeader help={"order-card"}
         back={{ href: "/orders", label: "Заказы" }}
         title={
           <span className="flex flex-wrap items-center gap-2">

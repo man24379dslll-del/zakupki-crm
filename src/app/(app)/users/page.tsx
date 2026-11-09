@@ -56,7 +56,7 @@ export default async function UsersPage() {
   const users = res.rows as { id: string; login: string; name: string; email: string | null; phone: string | null; position: string | null; role: string; role_perms: string[]; extra_permissions: string[]; revoked_permissions: string[]; is_active: boolean; last_login_at: string | null; orders: number; suppliers: string | null }[];
   return (
     <>
-      <PageHeader title="Пользователи и права" subtitle="Закупщик видит только свои заказы и показатели, пока ему не выдано право «Видеть заказы всех закупщиков»" />
+      <PageHeader help={"users"} title="Пользователи и права" subtitle="Закупщик видит только свои заказы и показатели, пока ему не выдано право «Видеть заказы всех закупщиков»" />
       <Card title="Добавить сотрудника" className="mb-4">
         <ActionForm action={createUserAction} resetOnOk className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Field label="ФИО" required className="lg:col-span-2"><Input name="name" required /></Field>

@@ -20,7 +20,7 @@ export default async function NewPayment({ searchParams }: { searchParams: Promi
   });
   return (
     <>
-      <PageHeader title="Новая оплата" subtitle="Выберите заказ, по которому прошёл платёж. Аванс без счёта вносится в карточке поставщика → «Оплаты и долги»." back={{ href: "/payments", label: "Оплаты" }} />
+      <PageHeader help={"payment-new"} title="Новая оплата" subtitle="Выберите заказ, по которому прошёл платёж. Аванс без счёта вносится в карточке поставщика → «Оплаты и долги»." back={{ href: "/payments", label: "Оплаты" }} />
       <FilterBar base="/payments/new" sp={sp}>
         <SearchInput sp={sp} placeholder="Поставщик, № счёта или заказа" />
       </FilterBar>

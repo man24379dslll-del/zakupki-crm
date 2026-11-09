@@ -27,7 +27,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
     : [];
   return (
     <>
-      <PageHeader title="Новый заказ" back={task ? { href: `/tasks/${task.id}`, label: "Задача" } : { href: "/orders", label: "Заказы" }} subtitle="Номер заказа присвоится автоматически" />
+      <PageHeader help={"order-new"} title="Новый заказ" back={task ? { href: `/tasks/${task.id}`, label: "Задача" } : { href: "/orders", label: "Заказы" }} subtitle="Номер заказа присвоится автоматически" />
       <ActionForm action={createOrderAction} className="space-y-4">
         {task && (
           <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm text-cyan-900">

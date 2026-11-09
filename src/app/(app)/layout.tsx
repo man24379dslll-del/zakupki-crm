@@ -42,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (can(u, PERMS.statsViewAll)) items.push({ href: "/analytics", label: "Аналитика", icon: "chart" });
   if (can(u, PERMS.usersManage)) items.push({ href: "/users", label: "Пользователи", icon: "users" });
   if (can(u, PERMS.settingsEdit) || can(u, PERMS.importRun) || can(u, PERMS.auditView)) items.push({ href: "/settings", label: "Настройки", icon: "settings" });
+  items.push({ href: "/help", label: "Инструкция", icon: "book" });
 
   const sidebar = (
     <div className="flex h-full flex-col">
