@@ -350,3 +350,56 @@ export function PrintButton({ children = "Печать / PDF" }: { children?: Re
     </button>
   );
 }
+
+/**
+ * Тип задачи при постановке: обычная или «Закупка товара» (только у руководителя с правом ставить задачи).
+ * Для закупки — строки «товар из справочника · количество · ориентир цены»; поля уходят как ti_product / ti_qty / ti_price.
+ */
+export function TaskKindFields({ products, canPurchase, defaultKind = "general" }: { products: { id: string; name: string; hint?: string | null }[]; canPurchase: boolean; defaultKind?: string }) {
+  const [kind, setKind] = useState(canPurchase ? defaultKind : "general");
+  const nextKey = useRef(0);
+  const [rows, setRows] = useState(() => [{ k: nextKey.current++ }]);
+  if (!canPurchase) return <input type="hidden" name="kind" value="general" />;
+  const opts = products.map((p) => ({ value: p.id, label: p.name, hint: p.hint }));
+  return (
+    <div className="space-y-3 sm:col-span-2 lg:col-span-4">
+      <div className="flex flex-wrap gap-4 text-sm">
+        {[
+          ["general", "Обычная задача"],
+          ["purchase", "Закупка товара — исполнитель подтверждает её заказом"],
+        ].map(([v, l]) => (
+          <label key={v} className="flex items-center gap-1.5">
+            <input type="radio" name="kind" value={v} checked={kind === v} onChange={() => setKind(v)} /> {l}
+          </label>
+        ))}
+      </div>
+      {kind === "purchase" && (
+        <div className="rounded-lg border border-cyan-200 bg-cyan-50/50 p-3">
+          <div className="mb-1 text-xs font-medium text-slate-600">Что закупить</div>
+          <div className="hidden gap-2 px-1 pb-1 text-xs text-slate-500 sm:grid sm:grid-cols-[minmax(0,4fr)_minmax(0,1.3fr)_minmax(0,1.6fr)_auto]">
+            <div>Товар из справочника</div>
+            <div>Количество</div>
+            <div>Ориентир цены, ₽ (необязательно)</div>
+            <div className="w-12" />
+          </div>
+          <div className="space-y-2">
+            {rows.map((r) => (
+              <div key={r.k} className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,4fr)_minmax(0,1.3fr)_minmax(0,1.6fr)_auto]">
+                <Combobox name="ti_product" options={opts} placeholder="Начните вводить название" className="col-span-2 sm:col-span-1" inputClassName="py-2" />
+                <input name="ti_qty" inputMode="decimal" placeholder="Кол-во" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                <input name="ti_price" inputMode="decimal" placeholder="Цена" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                <button type="button" className="w-12 text-sm text-slate-400 hover:text-rose-600" onClick={() => setRows((x) => (x.length > 1 ? x.filter((y) => y.k !== r.k) : x))}>
+                  Убрать
+                </button>
+              </div>
+            ))}
+          </div>
+          <button type="button" className={cn(btnClass("secondary", "sm"), "mt-2")} onClick={() => setRows((x) => [...x, { k: nextKey.current++ }])}>
+            + Добавить товар
+          </button>
+          <p className="mt-2 text-xs text-slate-500">Исполнитель выполнит задачу, оформив заказ (или несколько) и привязав его к задаче. Заказ должен быть оформлен не раньше даты задачи. Название задачи можно не писать — составится из товаров.</p>
+        </div>
+      )}
+    </div>
+  );
+}

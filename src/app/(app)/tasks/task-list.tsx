@@ -22,6 +22,9 @@ export interface TaskRow {
   due_soon: boolean;
   /** с какого момента задача в текущем статусе */
   status_since: string;
+  /** general | purchase */
+  kind: string;
+  orders_linked: number;
 }
 
 /** me — кто смотрит (null — наблюдатель, без кнопок). У строки — статус и главная кнопка следующего шага */
@@ -43,6 +46,9 @@ export function TaskList({ rows, showAssignee, me, showWaiting }: { rows: TaskRo
               </Link>
               <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
                 <Badge tone={TASK_STATUS_TONE[t.status]}>{TASK_STATUS_LABEL[t.status]}</Badge>
+                {t.kind === "purchase" && (
+                  <Badge tone={t.orders_linked ? "green" : "amber"}>{t.orders_linked ? `закупка · заказов: ${t.orders_linked}` : "закупка · заказа нет"}</Badge>
+                )}
                 {t.priority !== "NORMAL" && <Badge tone={PRIORITY_TONE[t.priority]}>{PRIORITY_LABEL[t.priority]}</Badge>}
                 {t.due_date && <span className={cn(t.overdue && "font-semibold text-rose-600", t.due_soon && !t.overdue && "font-medium text-amber-700")}>срок {fmtDateTime(t.due_date)}{t.overdue && " — просрочена"}</span>}
                 {showAssignee && <span>· исполнитель {t.assignee}</span>}
@@ -65,7 +71,8 @@ export function TaskList({ rows, showAssignee, me, showWaiting }: { rows: TaskRo
 }
 
 export const TASK_SELECT = `
-  t.id, t.title, t.status, t.priority, t.due_date, t.assignee_id, t.creator_id,
+  t.id, t.title, t.status, t.priority, t.due_date, t.assignee_id, t.creator_id, t.kind,
+  (SELECT count(*)::int FROM task_orders x WHERE x.task_id = t.id) AS orders_linked,
   COALESCE((SELECT max(l.created_at) FROM activity_logs l WHERE l.entity_type = 'task' AND l.entity_id = t.id::text AND (l.action = 'status' OR l.changes ? 'Статус')), t.created_at) AS status_since, (c.is_active AND c.deleted_at IS NULL) AS creator_active,
   a.name AS assignee, c.name AS creator, s.name AS supplier, o.number AS order_number,
   (t.status IN (${sqlList(TASK_ACTIVE)}) AND t.due_date < now()) AS overdue,

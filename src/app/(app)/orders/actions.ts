@@ -55,6 +55,8 @@ function readItems(fd: FormData) {
 
 export async function createOrderAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   let newId = "";
+  // заказ по задаче «Закупка» — после сохранения сразу привязывается к задаче
+  const taskId = fstr(fd.get("taskId"));
   const r = await safe(async () => {
     const u = await requirePerm(PERMS.ordersEdit);
     let supplierId = fstr(fd.get("supplierId"));
@@ -126,11 +128,17 @@ export async function createOrderAction(_: ActionResult, fd: FormData): Promise<
       const sum = items.reduce((s, x) => s + x.qty * (x.price ?? 0), 0);
       await logActivity(tx, { userId: u.id, action: "create", entityType: "order", entityId: o.id, summary: `Создан заказ ${orderNo(o.number)} на ${sum.toLocaleString("ru-RU")} ₽ (${items.length} поз.)`, ip: await clientIp() });
       if (buyerId && buyerId !== u.id) await notify(tx, { userId: buyerId, type: "order_assigned", title: `Вам назначен заказ ${orderNo(o.number)}`, link: `/orders/${o.id}` });
+      if (taskId) {
+        const { purchaseTask, linkOrderToTask } = await import("@/lib/services/purchase-tasks");
+        const t = await purchaseTask(tx, taskId);
+        if (t.assignee_id !== u.id && t.creator_id !== u.id && !can(u, PERMS.tasksAssign)) throw new UserError("Привязать заказ к задаче может её исполнитель");
+        await linkOrderToTask(tx, taskId, o.id, u);
+      }
     });
   });
   if (r && "error" in r) return r;
   if (r && "needConfirm" in r) return r;
-  redirect(`/orders/${newId}`);
+  redirect(taskId ? `/tasks/${taskId}` : `/orders/${newId}`);
 }
 
 export async function updateOrderHeaderAction(_: ActionResult, fd: FormData): Promise<ActionResult> {

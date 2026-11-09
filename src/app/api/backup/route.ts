@@ -7,7 +7,7 @@ import { buildXlsx, xlsxResponse } from "@/lib/xlsx";
 import { today } from "@/lib/format";
 
 /** Полная выгрузка всех таблиц (кроме паролей и сессий) — ручная резервная копия */
-const TABLES = ["suppliers", "supplier_buyers", "products", "product_suppliers", "legal_entities", "directions", "purchase_orders", "purchase_order_items", "deliveries", "delivery_items", "payments", "tasks", "task_comments", "comments", "documents", "supplier_contracts", "supply_plan_entries", "activity_logs", "import_batches", "settings"];
+const TABLES = ["suppliers", "supplier_buyers", "products", "product_suppliers", "legal_entities", "directions", "purchase_orders", "purchase_order_items", "deliveries", "delivery_items", "payments", "tasks", "task_items", "task_orders", "task_comments", "comments", "documents", "supplier_contracts", "supply_plan_entries", "activity_logs", "import_batches", "settings"];
 
 export async function GET() {
   const u = await getCurrentUser();

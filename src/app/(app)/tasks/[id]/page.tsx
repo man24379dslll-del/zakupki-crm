@@ -11,6 +11,7 @@ import { ActionForm, SubmitButton, TaskStepButtons } from "@/components/client";
 import { TASK_ACTIVE, taskSteps, type TaskStatus } from "@/lib/task-flow";
 import { DocumentsBlock, HistoryBlock } from "@/components/blocks";
 import { addTaskCommentAction, setTaskStatusAction, updateTaskAction } from "../actions";
+import { PurchaseBlock } from "./purchase-block";
 
 export const metadata = { title: "Задача" };
 
@@ -32,9 +33,13 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
   const self = t.assignee_id === t.creator_id;
   // подсказка, чей сейчас ход
   const hint =
-    status === "NEW" ? (isAssignee ? "Задача ждёт вас: нажмите «Взять в работу», чтобы постановщик видел, что вы начали." : `Исполнитель ${t.assignee} ещё не взял задачу в работу.`)
+    status === "NEW" ? (isAssignee ? (t.kind === "purchase" ? "Задача на закупку: нажмите «Взять в работу» или сразу оформите заказ по задаче в блоке «Закупка»." : "Задача ждёт вас: нажмите «Взять в работу», чтобы постановщик видел, что вы начали.") : `Исполнитель ${t.assignee} ещё не взял задачу в работу.`)
     : status === "REVIEW" ? (isAssignee ? `Отправлено на согласование. Ждём решения: ${t.creator}.` : steps.includes("approve") ? "Исполнитель сдал задачу. Проверьте и согласуйте или верните на доработку с причиной." : `Ждёт согласования: ${t.creator}.`)
-    : (status === "IN_PROGRESS" || status === "WAITING") && isAssignee && !self ? "Когда закончите — «Отправить на согласование». Задачу закроет постановщик." : null;
+    : (status === "IN_PROGRESS" || status === "WAITING") && isAssignee && !self
+      ? t.kind === "purchase"
+        ? "Оформите заказ по задаче (или привяжите свой) в блоке «Закупка», затем — «Отправить на согласование»."
+        : "Когда закончите — «Отправить на согласование». Задачу закроет постановщик."
+      : null;
   const timeline: [string, string | null][] = [
     ["Поставлена", t.created_at],
     ["Взята в работу", t.started_at],
@@ -69,6 +74,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
               </div>
             )}
           </Card>
+          {t.kind === "purchase" && <PurchaseBlock task={{ id, status: t.status!, assignee_id: t.assignee_id!, creator_id: t.creator_id!, created_at: new Date(t.created_at as unknown as string).toISOString() }} u={u} />}
           <Card title={`Обсуждение (${comments.length})`}>
             <ul className="mb-4 space-y-3">
               {comments.map(({ c, who }) => (

@@ -312,6 +312,8 @@ export const tasks = pgTable(
   {
     id: id(),
     title: text("title").notNull(),
+    /// general — обычная задача; purchase — «закупить товар»: выполняется привязкой заказов (task_orders)
+    kind: text("kind").notNull().default("general"),
     description: text("description"),
     assigneeId: uuid("assignee_id").notNull().references(() => users.id),
     creatorId: uuid("creator_id").notNull().references(() => users.id),
@@ -330,6 +332,32 @@ export const tasks = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (t) => [index("task_assignee_idx").on(t.assigneeId, t.status)],
+);
+
+/** Что закупить по задаче «Закупка»: товар, количество, ориентир цены */
+export const taskItems = pgTable(
+  "task_items",
+  {
+    id: id(),
+    taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").notNull().references(() => products.id),
+    qty: qty("qty").notNull(),
+    targetPrice: priceCol("target_price"),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("task_items_task_idx").on(t.taskId)],
+);
+
+/** Заказы, которыми исполнитель подтвердил задачу «Закупка» (их может быть несколько) */
+export const taskOrders = pgTable(
+  "task_orders",
+  {
+    taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id").notNull().references(() => purchaseOrders.id),
+    linkedById: uuid("linked_by_id").references(() => users.id),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.orderId] }), index("task_orders_order_idx").on(t.orderId)],
 );
 
 export const taskComments = pgTable("task_comments", {

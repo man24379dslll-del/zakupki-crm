@@ -1,13 +1,15 @@
 "use server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { clientIp, requireUser } from "@/lib/auth";
 import { can, PERMS } from "@/lib/permissions";
 import { logActivity, notify } from "@/lib/audit";
-import { fstr, safe, UserError } from "@/lib/forms";
-import { TASK_STATUS_LABEL, PRIORITY_LABEL } from "@/lib/format";
+import { fnum, fstr, safe, UserError } from "@/lib/forms";
+import { fmtQty, orderNo, TASK_STATUS_LABEL, PRIORITY_LABEL } from "@/lib/format";
+import { assertOrderAccess } from "@/lib/services/orders";
+import { linkOrderToTask, purchaseTask } from "@/lib/services/purchase-tasks";
 import { stepNotice, stepTarget, TASK_OPEN, TASK_STEPS, taskSteps, type TaskStep } from "@/lib/task-flow";
 import type { ActionResult } from "@/components/client";
 
@@ -33,7 +35,31 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
   const r = await safe(async () => {
     const u = await requireUser();
     if (u.role === "VIEWER") throw new UserError("Наблюдатель не может создавать задачи");
-    const title = fstr(fd.get("title"));
+    // «Закупка» — только руководитель с правом ставить задачи; товары берутся из справочника
+    const purchase = fstr(fd.get("kind")) === "purchase";
+    if (purchase && !can(u, PERMS.tasksAssign)) throw new UserError("Ставить задачи на закупку может руководитель с правом «Ставить задачи сотрудникам»");
+    const items: { productId: string; qty: number; targetPrice: number | null }[] = [];
+    if (purchase) {
+      const prods = fd.getAll("ti_product").map(String);
+      const qtys = fd.getAll("ti_qty");
+      const prices = fd.getAll("ti_price");
+      prods.forEach((productId, i) => {
+        const qty = fnum(qtys[i]);
+        if (!productId && qty === null) return;
+        if (!productId) throw new UserError("Выберите товар из справочника в каждой строке");
+        if (qty === null || Number.isNaN(qty) || qty <= 0) throw new UserError("Укажите количество для каждого товара");
+        const pr = fnum(prices[i]);
+        if (pr !== null && (Number.isNaN(pr) || pr < 0)) throw new UserError("Неверная цена-ориентир");
+        items.push({ productId, qty, targetPrice: pr });
+      });
+      if (!items.length) throw new UserError("Добавьте хотя бы один товар, который нужно закупить");
+    }
+    let title = fstr(fd.get("title"));
+    if (!title && purchase) {
+      const names = await db.select({ id: schema.products.id, name: schema.products.name, unit: schema.products.unit }).from(schema.products);
+      const nm = (pid: string) => names.find((x) => x.id === pid);
+      title = `Закупить: ${items.map((it) => `${nm(it.productId)?.name ?? "товар"} ${fmtQty(it.qty)} ${nm(it.productId)?.unit ?? "шт"}.`).join(", ")}`.slice(0, 200);
+    }
     if (!title) throw new UserError("Укажите название");
     let assigneeId = fstr(fd.get("assigneeId")) ?? u.id;
     if (assigneeId !== u.id && !can(u, PERMS.tasksAssign)) assigneeId = u.id; // закупщик ставит задачи только себе
@@ -41,6 +67,7 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
       .insert(schema.tasks)
       .values({
         title,
+        kind: purchase ? "purchase" : "general",
         description: fstr(fd.get("description")),
         assigneeId,
         creatorId: u.id,
@@ -51,8 +78,9 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
       })
       .returning();
     id = t.id;
-    await logActivity(db, { userId: u.id, action: "create", entityType: "task", entityId: t.id, summary: `Создана задача «${title}»`, ip: await clientIp() });
-    if (assigneeId !== u.id) await notify(db, { userId: assigneeId, type: "task_new", title: `Новая задача: ${title}`, body: `От ${u.name}. Откройте задачу и нажмите «Взять в работу»`, link: `/tasks/${t.id}` });
+    if (items.length) await db.insert(schema.taskItems).values(items.map((it, i) => ({ taskId: t.id, productId: it.productId, qty: String(it.qty), targetPrice: it.targetPrice === null ? null : String(it.targetPrice), sortOrder: i })));
+    await logActivity(db, { userId: u.id, action: "create", entityType: "task", entityId: t.id, summary: `Создана задача${purchase ? " на закупку" : ""} «${title}»`, ip: await clientIp() });
+    if (assigneeId !== u.id) await notify(db, { userId: assigneeId, type: "task_new", title: `Новая задача: ${title}`, body: purchase ? `От ${u.name}. Оформите заказ и привяжите его к задаче` : `От ${u.name}. Откройте задачу и нажмите «Взять в работу»`, link: `/tasks/${t.id}` });
   });
   if (r && "error" in r) return r;
   redirect(`/tasks/${id}`);
@@ -71,6 +99,10 @@ export async function setTaskStatusAction(_: ActionResult, fd: FormData): Promis
     if (!allowed.includes(step)) throw new UserError(`Сейчас это действие недоступно (задача «${TASK_STATUS_LABEL[t.status]}»). Обновите страницу.`);
     const comment = fstr(fd.get("comment"));
     if (TASK_STEPS[step].comment === "required" && !comment) throw new UserError(`Напишите, ${step === "return" ? "что нужно доделать" : "почему открываете заново"}`);
+    if (t.kind === "purchase" && (step === "submit" || step === "done")) {
+      const [{ n }] = (await db.execute(sql`SELECT count(*)::int AS n FROM task_orders WHERE task_id = ${t.id}`)).rows as { n: number }[];
+      if (!n) throw new UserError("Сначала привяжите заказ, которым выполнена закупка: «Создать заказ по задаче» или «Привязать заказ»");
+    }
     const status = stepTarget(step, t.status);
     const now = new Date();
     const label = TASK_STEPS[step].label;
@@ -134,5 +166,40 @@ export async function addTaskCommentAction(_: ActionResult, fd: FormData): Promi
     for (const other of new Set([t.assigneeId, t.creatorId])) if (other !== u.id) await notify(db, { userId: other, type: "task_comment", title: `Комментарий к «${t.title}»`, body: `${u.name}: ${text.slice(0, 120)}`, link: `/tasks/${t.id}` });
     revalidatePath(`/tasks/${t.id}`);
     return { ok: "Отправлено" };
+  });
+}
+
+/** Привязать существующий заказ к задаче «Закупка» (исполнитель, постановщик или руководитель) */
+export async function linkTaskOrderAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return safe(async () => {
+    const u = await requireUser();
+    const taskId = String(fd.get("id"));
+    const orderId = fstr(fd.get("orderId"));
+    if (!orderId) throw new UserError("Выберите заказ");
+    const t = await purchaseTask(db, taskId);
+    if (t.assignee_id !== u.id && t.creator_id !== u.id && !can(u, PERMS.tasksAssign)) throw new UserError("Привязать заказ может исполнитель задачи");
+    await assertOrderAccess(u, orderId);
+    const r = await db.transaction((tx) => linkOrderToTask(tx, taskId, orderId, u));
+    revalidatePath(`/tasks/${taskId}`);
+    revalidatePath(`/orders/${orderId}`);
+    return { ok: `Заказ ${orderNo(r.orderNumber)} привязан` };
+  });
+}
+
+/** Отвязать заказ, пока задача не сдана на согласование */
+export async function unlinkTaskOrderAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return safe(async () => {
+    const u = await requireUser();
+    const taskId = String(fd.get("id"));
+    const orderId = String(fd.get("orderId"));
+    const t = await purchaseTask(db, taskId);
+    if (t.assignee_id !== u.id && t.creator_id !== u.id && !can(u, PERMS.tasksAssign)) throw new UserError("Нет доступа к задаче");
+    if (!["NEW", "IN_PROGRESS", "WAITING"].includes(t.status)) throw new UserError("Задача уже сдана или закрыта — сначала верните её в работу");
+    const del = await db.delete(schema.taskOrders).where(and(eq(schema.taskOrders.taskId, taskId), eq(schema.taskOrders.orderId, orderId))).returning();
+    if (!del.length) throw new UserError("Заказ уже отвязан");
+    const [o] = await db.select({ number: schema.purchaseOrders.number }).from(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, orderId));
+    await logActivity(db, { userId: u.id, action: "update", entityType: "task", entityId: taskId, summary: `Отвязан заказ ${o ? orderNo(o.number) : ""}` });
+    revalidatePath(`/tasks/${taskId}`);
+    revalidatePath(`/orders/${orderId}`);
   });
 }

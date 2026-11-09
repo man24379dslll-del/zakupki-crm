@@ -7,7 +7,7 @@ import { requireUser, AccessError } from "@/lib/auth";
 import { can, PERMS } from "@/lib/permissions";
 import { assertOrderAccess, ITEM_STATS } from "@/lib/services/orders";
 import { opt, selectOptions } from "@/lib/services/refs";
-import { fmtDate, fmtDateTime, fmtMoney, fmtPct, fmtPrice, fmtQty, num, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo, ORDER_PAY_LABEL, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, today } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtMoney, fmtPct, fmtPrice, fmtQty, num, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, orderNo, ORDER_PAY_LABEL, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, TASK_STATUS_LABEL, today } from "@/lib/format";
 import { Alert, Badge, Card, Field, Input, PageHeader, Progress, Select, Stat, Table, Td, Textarea, Th, cn } from "@/components/ui";
 import { ActionForm, ConfirmButton, OrderPayFields, SubmitButton } from "@/components/client";
 import { Combobox } from "@/components/combobox";
@@ -98,6 +98,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const nullPrice = items.some((i) => i.price === null);
   const openItems = items.filter((i) => !i.is_closed && Number(i.qty) > Number(i.delivered));
 
+  // задачи «Закупка», которые подтверждены этим заказом
+  const byTasks = (await db.execute(sql`SELECT t.id, t.title, t.status FROM task_orders x JOIN tasks t ON t.id = x.task_id WHERE x.order_id = ${o.id} AND t.deleted_at IS NULL`)).rows as { id: string; title: string; status: string }[];
   return (
     <>
       <PageHeader
@@ -150,6 +152,17 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         }
       />
 
+      {byTasks.length > 0 && (
+        <div className="mb-3 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm text-cyan-900">
+          Заказ по задаче:{" "}
+          {byTasks.map((t, i) => (
+            <span key={t.id}>
+              {i > 0 && ", "}
+              <Link href={`/tasks/${t.id}`} className="font-medium hover:underline">«{t.title}»</Link> ({TASK_STATUS_LABEL[t.status]})
+            </span>
+          ))}
+        </div>
+      )}
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Stat label="Сумма заказа" value={fmtMoney(amount)} sub={nullPrice ? "есть позиции без цены" : `${items.length} поз.`} />
         <Stat label="Поставлено" value={fmtPct(pct)} sub={`${fmtQty(delivered)} из ${fmtQty(qty)} · остаток ${fmtQty(remaining)}`} />
