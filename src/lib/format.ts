@@ -14,8 +14,10 @@ export function fmtQty(v: unknown) {
   return n === null ? "—" : nfq.format(n);
 }
 export function fmtMoney(v: unknown, digits: 0 | 2 = 0) {
-  const n = num(v);
+  let n = num(v);
   if (n === null) return "—";
+  // остаток от округления копеек (−0,004) не показываем как «−0 ₽»
+  if (Math.abs(n) < (digits === 2 ? 0.005 : 0.5)) n = 0;
   return (digits === 2 ? nf2 : nf0).format(n) + " ₽";
 }
 export function fmtPrice(v: unknown) {
