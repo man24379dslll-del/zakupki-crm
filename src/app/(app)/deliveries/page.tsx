@@ -149,8 +149,11 @@ async function Log({ sp, all, opts, u }: { sp: SP; all: boolean; opts: Opts; u: 
   const q = qp(sp, "q");
   if (q) w.push(sql`(s.name ILIKE ${"%" + q + "%"} OR d.waybill_number ILIKE ${"%" + q + "%"} OR o.invoice_number ILIKE ${"%" + q + "%"})`);
   const res = await db.execute(sql`
-    SELECT d.id, d.date, d.date_assumed, d.waybill_number, o.id AS order_id, o.number, s.name AS supplier, u.name AS who,
-      (SELECT string_agg(pr.name || ': ' || trim(to_char(di.qty, 'FM999G999G990D###')), '; ') FROM delivery_items di JOIN products pr ON pr.id = di.product_id WHERE di.delivery_id = d.id) AS items,
+    SELECT d.id, d.date, d.date_assumed, d.waybill_number, o.id AS order_id, o.number, o.invoice_number, o.invoice_date, s.name AS supplier, u.name AS who,
+      -- в колонке «Товары» — только названия, количество в своей колонке; по каждому товару — в подсказке
+      (SELECT string_agg(DISTINCT pr.name, ', ') FROM delivery_items di JOIN products pr ON pr.id = di.product_id WHERE di.delivery_id = d.id) AS items,
+      (SELECT string_agg(pr.name || ': ' || trim(to_char(di.qty, 'FM999G999G990D###')), '; ') FROM delivery_items di JOIN products pr ON pr.id = di.product_id WHERE di.delivery_id = d.id) AS items_qty,
+      (SELECT count(*)::int FROM delivery_items di WHERE di.delivery_id = d.id) AS lines,
       (SELECT SUM(di.qty) FROM delivery_items di WHERE di.delivery_id = d.id) AS qty,
       (SELECT SUM(di.qty * COALESCE(di.price,0)) FROM delivery_items di WHERE di.delivery_id = d.id) AS amount,
       COUNT(*) OVER()::int AS total
@@ -158,7 +161,7 @@ async function Log({ sp, all, opts, u }: { sp: SP; all: boolean; opts: Opts; u: 
     LEFT JOIN users u ON u.id = d.created_by_id
     WHERE ${sql.join(w, sql` AND `)}
     ORDER BY d.date DESC, o.number DESC LIMIT ${limit} OFFSET ${offset}`);
-  const rows = res.rows as { id: string; date: string; date_assumed: boolean; waybill_number: string | null; order_id: string; number: number; supplier: string; who: string | null; items: string; qty: string; amount: string; total: number }[];
+  const rows = res.rows as { id: string; date: string; date_assumed: boolean; waybill_number: string | null; order_id: string; number: number; invoice_number: string | null; invoice_date: string | null; supplier: string; who: string | null; items: string; items_qty: string; lines: number; qty: string; amount: string; total: number }[];
   return (
     <>
       <FilterBar base="/deliveries" sp={sp} keep={["tab"]}>
@@ -178,6 +181,7 @@ async function Log({ sp, all, opts, u }: { sp: SP; all: boolean; opts: Opts; u: 
               <tr>
                 <Th>Дата</Th>
                 <Th>Заказ</Th>
+                <Th>Счёт</Th>
                 <Th>Поставщик</Th>
                 <Th>Товары</Th>
                 <Th right>Кол-во</Th>
@@ -198,8 +202,17 @@ async function Log({ sp, all, opts, u }: { sp: SP; all: boolean; opts: Opts; u: 
                       {orderNo(r.number)}
                     </Link>
                   </Td>
+                  <Td className="whitespace-nowrap">
+                    {r.invoice_number ?? <span className="text-slate-400">—</span>}
+                    {r.invoice_date && <div className="text-xs text-slate-500">от {fmtDate(r.invoice_date)}</div>}
+                  </Td>
                   <Td className="max-w-48 truncate">{r.supplier}</Td>
-                  <Td className="max-w-80 text-xs text-slate-600">{r.items}</Td>
+                  <Td className="max-w-80 text-xs text-slate-600">
+                    <span title={r.lines > 1 ? r.items_qty : undefined}>
+                      {r.items}
+                      {r.lines > 1 && <span className="text-slate-400"> · {r.lines} поз.</span>}
+                    </span>
+                  </Td>
                   <Td right>{fmtQty(r.qty)}</Td>
                   <Td right>{fmtMoney(r.amount)}</Td>
                   <Td>{r.waybill_number ?? "—"}</Td>
