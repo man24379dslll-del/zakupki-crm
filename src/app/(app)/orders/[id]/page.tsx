@@ -291,9 +291,15 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                               <SubmitButton size="sm">Сохранить</SubmitButton>
                             </ActionForm>
                             <div className="mt-1">
-                              <ConfirmButton action={deleteItemAction} question="Удалить позицию?" hidden={{ itemId: i.id }}>
-                                Удалить позицию
-                              </ConfirmButton>
+                              {Number(i.delivered) > 0 ? (
+                                <p className="text-xs text-slate-500">
+                                  Удалить нельзя: по позиции уже принято {fmtQty(i.delivered)} {i.unit}. Чтобы больше не ждать остаток — отметьте «закрыта» и нажмите «Сохранить». Если позиция внесена по ошибке — сначала удалите её поставки в блоке «Поставки».
+                                </p>
+                              ) : (
+                                <ConfirmButton action={deleteItemAction} question="Удалить позицию?" hidden={{ itemId: i.id }}>
+                                  Удалить позицию
+                                </ConfirmButton>
+                              )}
                             </div>
                           </div>
                         </td>

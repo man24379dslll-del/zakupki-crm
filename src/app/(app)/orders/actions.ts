@@ -272,10 +272,14 @@ export async function deleteItemAction(_: ActionResult, fd: FormData): Promise<A
     const [it] = await db.select().from(schema.purchaseOrderItems).where(eq(schema.purchaseOrderItems.id, itemId));
     if (!it) throw new UserError("Позиция не найдена");
     await assertOrderAccess(u, it.orderId, true);
-    const [d] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.deliveryItems).where(eq(schema.deliveryItems.orderItemId, itemId));
-    if (d.n > 0) throw new UserError("По позиции уже есть поставки — удалить нельзя. Закройте позицию вместо удаления.");
+    // мешают только действующие поставки; строки уже удалённых поставок по этой позиции убираем вместе с ней
+    const [d] = (await db.execute(sql`SELECT count(*)::int AS n, COALESCE(SUM(di.qty),0)::float AS qty FROM delivery_items di JOIN deliveries dl ON dl.id = di.delivery_id
+      WHERE di.order_item_id = ${itemId} AND dl.deleted_at IS NULL`)).rows as { n: number; qty: number }[];
+    if (d.n > 0)
+      throw new UserError(`По позиции уже принято ${d.qty.toLocaleString("ru-RU")} шт. — удалить её нельзя. Чтобы больше не ждать остаток, отметьте «закрыта» и сохраните. Если позиция внесена по ошибке — сначала удалите её поставки в блоке «Поставки».`);
     const [p] = await db.select({ name: schema.products.name }).from(schema.products).where(eq(schema.products.id, it.productId));
     await db.transaction(async (tx) => {
+      await tx.execute(sql`DELETE FROM delivery_items di USING deliveries dl WHERE dl.id = di.delivery_id AND di.order_item_id = ${itemId} AND dl.deleted_at IS NOT NULL`);
       await tx.delete(schema.purchaseOrderItems).where(eq(schema.purchaseOrderItems.id, itemId));
       await recalcOrderStatus(tx, it.orderId);
       await logActivity(tx, { userId: u.id, action: "delete", entityType: "order", entityId: it.orderId, summary: `Удалена позиция «${p.name}» (${it.qty} × ${it.price ?? "—"})`, changes: { Позиция: [`${p.name}: ${it.qty} × ${it.price ?? "—"}`, null] } });

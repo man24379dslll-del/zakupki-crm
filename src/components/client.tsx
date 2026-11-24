@@ -66,13 +66,18 @@ export function ActionForm({ action, children, className, resetOnOk, confirmFiel
 export function ConfirmButton({ action, children, question, variant = "danger", size = "sm", hidden }: { action: FormAction; children: ReactNode; question: string; variant?: BtnVariant; size?: "sm" | "md"; hidden?: Record<string, string> }) {
   const [open, setOpen] = useState(false);
   const [state, formAction] = useActionState(action, undefined);
+  // после ответа сервера закрываем подтверждение — иначе сообщение об ошибке не видно и кажется, что «ничего не произошло»
+  useEffect(() => {
+    if (state) setOpen(false);
+  }, [state]);
   if (!open)
     return (
       <span className="inline-flex flex-col">
         <button type="button" className={btnClass(variant, size)} onClick={() => setOpen(true)}>
           {children}
         </button>
-        {state && "error" in state && state.error ? <span className="mt-1 text-xs text-rose-700">{state.error}</span> : null}
+        {state && "error" in state && state.error ? <span className="mt-1 max-w-md rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-800">{state.error}</span> : null}
+        {state && "ok" in state && state.ok ? <span className="mt-1 max-w-md text-xs text-emerald-700">{state.ok}</span> : null}
       </span>
     );
   return (
@@ -113,6 +118,10 @@ export function SaveViewButton({ action, page }: { action: FormAction; page: str
   const sp = useSearchParams();
   const [open, setOpen] = useState(false);
   const [state, formAction] = useActionState(action, undefined);
+  // после ответа сервера закрываем подтверждение — иначе сообщение об ошибке не видно и кажется, что «ничего не произошло»
+  useEffect(() => {
+    if (state) setOpen(false);
+  }, [state]);
   if (!open)
     return (
       <button type="button" onClick={() => setOpen(true)} className={btnClass("ghost", "sm")}>
@@ -172,17 +181,18 @@ export function OrderItemsEditor({
   const directionOpts = directions.map((d) => ({ value: d.id, label: d.name, hint: d.hint }));
   return (
     <div>
-      <div className="hidden gap-2 px-1 pb-1 text-xs font-medium text-slate-500 sm:grid sm:grid-cols-[minmax(0,4fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.8fr)_minmax(0,1.7fr)_auto]">
+      <div className="hidden gap-2 px-1 pb-1 text-xs font-medium text-slate-500 sm:grid sm:grid-cols-[minmax(0,4fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1.7fr)_minmax(0,1.6fr)_auto]">
         <div>Товар</div>
         <div>Количество</div>
         <div>Цена за ед., ₽</div>
+        <div className="text-right">Сумма, ₽</div>
         <div title="Если пусто — общая плановая дата заказа">Срок, если другой</div>
         <div>Направление</div>
         <div className="w-12" />
       </div>
       <div className="space-y-2">
         {rows.map((r, i) => (
-          <div key={r._k} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-100 p-2 sm:border-0 sm:p-0 sm:grid-cols-[minmax(0,4fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.8fr)_minmax(0,1.7fr)_auto]">
+          <div key={r._k} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-100 p-2 sm:border-0 sm:p-0 sm:grid-cols-[minmax(0,4fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1.7fr)_minmax(0,1.6fr)_auto]">
             {/* free: можно вписать новый товар — сервер проверит похожие и спросит */}
             <Combobox name="item_product" free options={productOpts} defaultValue={r.productName ?? ""} placeholder="Начните вводить название или артикул" className="col-span-2 sm:col-span-1" inputClassName="py-2" />
             <input
@@ -201,6 +211,14 @@ export function OrderItemsEditor({
               onChange={(e) => setVals((v) => v.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
+            {/* сумма строки считается сразу: количество × цена */}
+            <div className="flex items-center justify-end rounded-lg bg-slate-50 px-3 py-2 text-sm tabular-nums text-slate-700" title="Количество × цена">
+              {(() => {
+                const q = Number(vals[i]?.qty.replace(",", ".").replace(/\s/g, ""));
+                const p = Number(vals[i]?.price.replace(",", ".").replace(/\s/g, ""));
+                return vals[i]?.qty && vals[i]?.price && Number.isFinite(q) && Number.isFinite(p) ? (q * p).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) : "—";
+              })()}
+            </div>
             {/* свой срок позиции; пусто — общая плановая дата заказа */}
             <input name="item_due" type="date" defaultValue={r.due} title="Срок поставки этой позиции, если отличается от общего" className="rounded-lg border border-slate-300 px-2 py-2 text-sm text-slate-700" />
             <Combobox name="item_direction" options={directionOpts} defaultValue={r.directionId ?? ""} placeholder="как у заказа" inputClassName="py-2" />
